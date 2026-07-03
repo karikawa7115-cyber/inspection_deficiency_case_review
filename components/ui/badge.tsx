@@ -19,6 +19,17 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        info: "border border-inspection-info/25 bg-inspection-info-bg text-inspection-info [a]:hover:bg-inspection-info-bg/80",
+        success:
+          "border border-inspection-success/25 bg-inspection-success-bg text-inspection-success [a]:hover:bg-inspection-success-bg/80",
+        warning:
+          "border border-inspection-warning/25 bg-inspection-warning-bg text-inspection-warning [a]:hover:bg-inspection-warning-bg/80",
+        handover:
+          "border border-inspection-handover/25 bg-inspection-handover-bg text-inspection-handover [a]:hover:bg-inspection-handover-bg/80",
+        indigo:
+          "border border-inspection-indigo/25 bg-inspection-indigo-bg text-inspection-indigo [a]:hover:bg-inspection-indigo-bg/80",
+        neutral:
+          "border border-inspection-neutral/20 bg-inspection-neutral-bg text-inspection-neutral [a]:hover:bg-inspection-neutral-bg/80",
       },
       size: {
         default: "h-5 px-2 text-xs",

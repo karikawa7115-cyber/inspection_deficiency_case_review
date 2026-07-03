@@ -1,0 +1,62 @@
+[
+  {
+    "id": "insp-obt-psc-2026-02-17-port-alpha",
+    "vesselCode": "OBT",
+    "vesselName": "DEMO VESSEL CHARLIE",
+    "imo": "9000003",
+    "flag": "Panama",
+    "shipType": "Bulk",
+    "inspectionType": "PSC",
+    "inspectionDate": "2026-02-17",
+    "port": "PORT ALPHA",
+    "folderName": "OBT_PSC_2026-02-17_PORTALPHA",
+    "detained": false,
+    "masterName": "Capt. C. Demo",
+    "pscoName": "PSCO Inspector Charlie",
+    "companyName": "Demo Ship Management Co., Ltd.",
+    "deficiencies": [
+      {
+        "id": "obt-def-01",
+        "number": 1,
+        "code": "07105",
+        "description": "Self-closing fire door between WHEEL HOUSE and stairway - not closed completely",
+        "actionCode": "17",
+        "cr5Contingency": "ADJUST PRESSURE AUTOMATIC DOOR CLOSER OF SELF-CLOSING FIRE DOOR BETWEEN WHEEL HOUSE AND STAIRWAY - CLOSED COMPLETELY NOW. AND CHECK CAREFULLY FIRE DOOR IN QUARTERLY INSPECTION, AND AS NECESSARY.",
+        "cr5RootCause": "INSUFFICIENT PERIODIC INSPECTION AND ADJUSTMENT OF THE DOOR CLOSER PRESSURE.",
+        "cr6Correction": "ADJUST PRESSURE AUTOMATIC DOOR CLOSER OF SELF-CLOSING FIRE DOOR BETWEEN WHEEL HOUSE AND STAIRWAY - CLOSED COMPLETELY NOW.",
+        "reviewAlerts": [
+          {
+            "type": "root_cause_shallow",
+            "message": "Cause cites insufficient periodic inspection but does not explain why the quarterly fire door check did not detect incomplete closure before PSC."
+          },
+          {
+            "type": "preventive_weak",
+            "message": "Contingency relies on \"quarterly inspection\" without responsible person, record format, or master verification."
+          }
+        ],
+        "reviewQuestions": [
+          "When was the door closer pressure last adjusted, and who performed the check?",
+          "Why did the quarterly fire door inspection not identify incomplete closure before PSC?",
+          "What record (checklist / log) documents the last quarterly fire door inspection?",
+          "Who on board is responsible for maintaining fire door closers under the SMS?",
+          "After correcting this door, were all similar self-closing fire doors on board checked?"
+        ],
+        "reviewStatus": "reviewing",
+        "isDemoFocus": true
+      },
+      {
+        "id": "obt-def-02",
+        "number": 2,
+        "code": "07116",
+        "description": "The ventilator for Engine room (S-side) - unable to close immediately",
+        "actionCode": "17",
+        "cr5Contingency": "EASED AND GREASED THE VENTILATOR FOR ENGINE ROOM (S-SIDE) - CLOSE IMMEDIATELY NOW. AND CHECK CAREFULLY VENTILATOR IN QUARTERLY INSPECTION, AND AS NECESSARY.",
+        "cr5RootCause": "INSUFFICIENT LUBRICATION AND MAINTENANCE OF THE VENTILATOR MOVING PARTS.",
+        "cr6Correction": "EASED AND GREASED THE VENTILATOR FOR ENGINE ROOM (S-SIDE) - CLOSE IMMEDIATELY NOW.",
+        "reviewAlerts": [],
+        "reviewQuestions": [],
+        "reviewStatus": "draft"
+      }
+    ]
+  }
+]

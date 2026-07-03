@@ -1,0 +1,51 @@
+[
+  {
+    "id": "insp-plr-psc-2026-01-26-port-bravo",
+    "vesselCode": "PLR",
+    "vesselName": "DEMO VESSEL ALPHA",
+    "imo": "9000001",
+    "flag": "Panama",
+    "shipType": "Bulk Carrier",
+    "inspectionType": "PSC",
+    "inspectionDate": "2026-01-26",
+    "port": "PORT BRAVO",
+    "folderName": "PLR_PSC_2026-01-26_PORTBRAVO_CRITICAL_MATTER",
+    "criticalMatter": true,
+    "criticalMatterNote": "Port State Control Action 17ac (rectify prior to departure). Class society occasional survey (remote) completed 26 Jan 2026; vessel cleared port but missed original departure time.",
+    "detained": false,
+    "masterName": "Capt. A. Demo",
+    "pscoName": "PSCO Inspector Alpha",
+    "companyName": "Demo Ship Management Co., Ltd.",
+    "deficiencies": [
+      {
+        "id": "plr-def-01",
+        "number": 1,
+        "code": "07123",
+        "description": "Fuel tank shut-off valve could not be operated from outside of emergency generator space (oil fuel pipes / SOLAS II-2 4.2.2.3.4).",
+        "actionCode": "17ac",
+        "regulatoryCite": "SOLAS 2011/2012 II-2 4.2.2.3.4",
+        "cr5Contingency": "Continue repairing the emergency generator F.O tank shut-off valve. Replaced/installed the spare onboard. Tested many times to confirm that the emergency shut-off valve is in good condition.",
+        "cr5RootCause": "During the test ordered by the port state control authority, the emergency generator F.O tank shut-off valve failed and broke during operation by the crew.",
+        "cr6Correction": "Replaced/installed the spare onboard. Tested many times to confirm that the emergency shut-off valve is in good condition. Confirmed operating in good condition.",
+        "reviewAlerts": [
+          {
+            "type": "root_cause_shallow",
+            "message": "Cause describes valve failure during PSC test but does not explain why remote operation was not verified before PSC or why the spare/onboard condition was not confirmed under SMS maintenance."
+          },
+          {
+            "type": "preventive_weak",
+            "message": "CR-6 proposes changing annual inspection to quarterly but lacks responsible rank, record format, and master verification after change."
+          }
+        ],
+        "reviewQuestions": [
+          "When was the emergency generator F.O tank shut-off valve last tested from the remote position outside the space?",
+          "Why did the valve fail during the PSC-ordered test rather than during routine onboard inspection?",
+          "Was the spare valve onboard and serviceable before PSC; if yes, why was it not installed proactively?",
+          "Who will own the new quarterly inspection, and which checklist/log will record each test?",
+          "After replacement, were all similar remote-operated fuel shut-off valves on board checked?"
+        ],
+        "reviewStatus": "reviewing"
+      }
+    ]
+  }
+]

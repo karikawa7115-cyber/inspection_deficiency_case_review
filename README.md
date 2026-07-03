@@ -159,6 +159,157 @@ AI に依頼するときは「`designing-workspace-ui` スキルを使って」�
 
 課題の取り組み方の詳細は**受講生ポータル**を参照してください。
 
+## Inspection Deficiency Database（Supabase 読み取り専用）
+
+`/inspection` の **Deficiency Database** は、過去の指摘を Supabase PostgreSQL から検索する読み取り専用ビューです。
+**Case Review**（P1–P4）はローカル JSON + localStorage で動作します。
+
+### 公開データの方針（Vercel 含む）
+
+公開 URL では**匿名化サンプルデータのみ**を使用します。
+
+| データ | 内容 |
+|---|---|
+| Case Review（JSON） | 架空の船名・港名・会社名（例: DEMO VESSEL ALPHA / PORT BRAVO） |
+| Deficiency Database（Supabase） | `supabase/seed.sql` の匿名化 seed（16 件） |
+| 含めないもの | 実船名・船主名・実 PSC Report・実写真・実 CR-5 / CR-6 PDF |
+
+Supabase は **read-only** 接続です（`anon` キー + RLS で SELECT のみ）。
+Vercel 環境変数に設定するのは次の 2 つのみです。
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+**使用しないもの:** `service_role` key、secret key、database password、connection string
+
+### セットアップ手順
+
+1. [Supabase](https://supabase.com/) でプロジェクトを作成する
+2. SQL Editor で `supabase/schema.sql` を実行する（テーブル + RLS）
+3. 続けて `supabase/seed.sql` を実行する（匿名化サンプルデータ）
+4. プロジェクトの **Settings → API** から URL と `anon` キーをコピーする
+5. リポジトリ直下に `.env.local` を作成する（`.env.example` を参考）
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+6. `npm run dev` を再起動し、`http://localhost:3000/inspection` を開く
+7. P1 の **Deficiency Database** をクリックして一覧が表示されることを確認する
+
+### セキュリティ（プロトタイプ）
+
+| 項目 | 今月の方針 |
+|---|---|
+| クライアント接続 | `NEXT_PUBLIC_*` の anon キー（静的エクスポートのためブラウザに含まれる） |
+| RLS | 有効。`anon` / `authenticated` は **SELECT のみ** |
+| 書き込み | INSERT / UPDATE / DELETE は実装しない |
+| データ | seed は匿名化のみ。実船名・実港名は入れない |
+| 本番運用 | **Auth と権限管理が必須**。`service_role` キーはクライアントに置かない |
+
+`vessels.vessel_name` は画面表示用（display name）、`vessels.actual_name` は将来の認証済みビュー用に予約しています。今月のプロトタイプでは `actual_name` は常に null です。
+
+### 関連ファイル
+
+```
+supabase/schema.sql              DB スキーマ + read-only RLS
+supabase/seed.sql                匿名化 seed（16 deficiencies）
+lib/supabase/client.ts           ブラウザ Supabase クライアント
+lib/inspection/db-types.ts       Database View 用の型
+lib/inspection/db-load.ts        SELECT クエリ
+lib/inspection/db-alerts.ts      アラート派生・フィルター
+components/inspection/DeficiencyDatabaseView.tsx
+```
+
+## Vercel へデプロイする（Inspection Review Assistant 公開）
+
+課題提出用に `/inspection`（Case Review + Deficiency Database）を Vercel で公開する手順です。
+本プロジェクトは `output: "export"` の**静的エクスポート**構成です。Supabase 接続はブラウザから `anon` キーで **SELECT のみ**行います。
+
+対象リポジトリ例: [inspection_deficiency_case_review](https://github.com/karikawa7115-cyber/inspection_deficiency_case_review)
+
+### 前提
+
+- Supabase に `supabase/schema.sql` と `supabase/seed.sql` を実行済み（匿名化データ 16 件）
+- `.env.local` は **Git に含めない**（`.gitignore` で除外済み）
+- `service_role` key / secret key / database password / connection string は**使わない**
+
+### 手順
+
+1. **GitHub に push**  
+   ローカルの変更をコミットし、GitHub リポジトリへ push する。
+
+2. **Vercel で New Project**  
+   [Vercel Dashboard](https://vercel.com/dashboard) → **Add New…** → **Project**
+
+3. **GitHub repository を Import**  
+   `karikawa7115-cyber/inspection_deficiency_case_review` を選択する。
+
+4. **Framework Preset**  
+   **Next.js** を選択する（変更不要なことが多い）。
+
+5. **Root Directory**  
+   リポジトリ直下がプロジェクトルートなら **空欄のまま**。
+
+6. **Build 設定**（自動検出されない場合のみ明示）
+
+   | 項目 | 値 |
+   |---|---|
+   | Build Command | `npm run build` |
+   | Output Directory | `out` |
+   | Install Command | `npm install`（デフォルト） |
+
+7. **Environment Variables を登録**（Deploy 前に必須）
+
+   | Name | Value |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase プロジェクト URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase **anon** キーのみ |
+
+   - **Production** に適用する
+   - `NEXT_PUBLIC_*` はビルド時にバンドルへ埋め込まれるため、追加・変更後は **Redeploy** が必要
+
+8. **Deploy** を実行する。
+
+9. **動作確認**  
+   発行された URL で以下を確認する。
+
+   - `https://<your-project>.vercel.app/inspection` が開く
+   - P1 の **Deficiency Database** をクリックし、匿名化 seed **16 件**が表示される
+   - **Case Review** に戻れる
+
+> `postbuild` によりルート `/` も Inspection デモを表示します（`/inspection` と同等）。課題 URL 共有時は `/inspection` を推奨します。
+
+### Vercel 公開後の確認チェックリスト
+
+**基本表示**
+
+- [ ] 公開 URL が開ける
+- [ ] `/inspection` が開ける
+- [ ] Case Review（P1–P4）が表示される
+- [ ] Deficiency Database が表示される
+- [ ] Case Review に戻れる
+
+**Database View / Supabase**
+
+- [ ] Supabase の匿名化データ（16 件）が一覧に表示される
+- [ ] Keyword Search が動く
+- [ ] Vessel Filter が動く
+- [ ] Repeated Only が動く
+- [ ] Internal Audit Checklist Candidate Only が動く
+- [ ] 行を選択すると Detail Panel が表示される
+
+**セキュリティ・データ**
+
+- [ ] `service_role` key や secret key がクライアントに含まれていない（Network / ソースで `anon` のみ）
+- [ ] Database View に実船名・実船主名・実写真・実 PDF が表示されていない（seed は匿名化のみ）
+- [ ] `.env.local` がリポジトリに含まれていない
+
+**env 未設定時（別ブランチ等で検証する場合）**
+
+- [ ] env なしでビルドした場合、Database View に設定エラーが表示され、Case Review は動作する
+
 ## 提出する
 
 提出物・期限・中間発表のフォーマットは**受講生ポータル**を見てください。

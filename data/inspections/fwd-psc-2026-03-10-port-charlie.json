@@ -1,0 +1,119 @@
+[
+  {
+    "id": "insp-fwd-psc-2026-03-10-port-charlie",
+    "vesselCode": "FWD",
+    "vesselName": "DEMO VESSEL BRAVO",
+    "imo": "9000002",
+    "flag": "Panama",
+    "shipType": "General Cargo Ship",
+    "inspectionType": "PSC",
+    "inspectionDate": "2026-03-10",
+    "port": "PORT CHARLIE",
+    "folderName": "FWD_PSC_2026-03-10_PORTCHARLIE",
+    "criticalMatter": false,
+    "detained": false,
+    "masterName": "Capt. B. Demo",
+    "pscoName": "PSCO Inspector Bravo",
+    "companyName": "Demo Ship Management Co., Ltd.",
+    "deficiencies": [
+      {
+        "id": "fwd-def-01",
+        "number": 1,
+        "code": "14123",
+        "description": "Oil coaming no plug in",
+        "actionCode": "10",
+        "regulatoryCite": "SOLAS",
+        "cr5Contingency": "OIL COAMING PLUG FITTED IN POSITION.",
+        "cr5RootCause": "OIL COAMING PLUG NOT FITTED / HUMAN ERROR.",
+        "cr6Correction": "PLUG FITTED IN POSITION.",
+        "reviewAlerts": [],
+        "reviewQuestions": [],
+        "reviewStatus": "approved"
+      },
+      {
+        "id": "fwd-def-02",
+        "number": 2,
+        "code": "01320",
+        "description": "Garbage record book recorded error",
+        "actionCode": "99",
+        "regulatoryCite": "SOLAS",
+        "cr5Contingency": "NOW GARBAGE RECORD BOOK IS NOT USE CORRECTION INK & TAPE.",
+        "cr5RootCause": "GARBAGE RECORD BOOK IS OLD RECORDED IN USE CORRECTION INK., HUMAN ERROR.",
+        "cr6Correction": "NOW GARBAGE RECORD BOOK IS NOT USE CORRECTION INK & TAPE.",
+        "reviewAlerts": [
+          {
+            "type": "root_cause_too_general",
+            "message": "Cause is listed as human error only; does not explain why correction ink was still used or how SMS training prevents recurrence."
+          }
+        ],
+        "reviewQuestions": [
+          "When was the crew last trained on garbage record book entry rules?",
+          "Who verified entries before PSC and why was correction ink still in use?"
+        ],
+        "reviewStatus": "reviewing"
+      },
+      {
+        "id": "fwd-def-03",
+        "number": 3,
+        "code": "10101",
+        "description": "Two pilot ladders rubber step blended",
+        "actionCode": "99",
+        "regulatoryCite": "SOLAS",
+        "cr5Contingency": "REQUEST ORDER THAT TWO PILOT LADDERS TO OWNER COMPANY.",
+        "cr5RootCause": "TWO PILOT LADDERS RUBBER STEP ARE FORCE TOUCHE BY PILOTBOAT IN BAD WEATHER... / EQUIPMENT FAILURE.",
+        "cr6Correction": "REQUEST THAT TWO PILOT LADDERS TO OWNER COMPANY.",
+        "reviewAlerts": [
+          {
+            "type": "root_cause_shallow",
+            "message": "Cause cites pilot boat contact in bad weather but does not explain pre-use ladder inspection or stowage protection before pilot transfer."
+          },
+          {
+            "type": "preventive_weak",
+            "message": "Corrective action is owner supply order only; no onboard interim control or inspection frequency until replacement arrives."
+          }
+        ],
+        "reviewQuestions": [
+          "When were the pilot ladders last inspected before use at this port?",
+          "What interim measures apply until the two new 9m ladders are delivered onboard?",
+          "How will bad-weather pilot transfer risk be controlled under the SMS?"
+        ],
+        "reviewStatus": "reviewing"
+      },
+      {
+        "id": "fwd-def-04",
+        "number": 4,
+        "code": "11117",
+        "description": "Lifebuoy not in position, and starboard quarter lifebuoy need to replace",
+        "actionCode": "10",
+        "regulatoryCite": "SOLAS",
+        "cr5Contingency": "PILOT LADDER INUSE LIFEBUOY FITTED IN POSITION. AND STARBOARD QUARTER LIFEBUOY GRAB LINE IS REPAIRED.",
+        "cr5RootCause": "PILOT STATION INUSE LIFEBUOY IS NOT FITTED IN PORT STAY / STARBOARD QUARTER LIFEBUOY IS NOT STRONG IN GRAB LINE / HUMAN ERROR & EQUIPMENT FAILURE.",
+        "cr6Correction": "PILOT STATION IN USE LIFEBUOY FITTED IN POSITION. AND STARBOARD QUARTER LIFEBUOY IS REPAIRED GRAB LINE.",
+        "reviewAlerts": [],
+        "reviewQuestions": [],
+        "reviewStatus": "approved"
+      },
+      {
+        "id": "fwd-def-05",
+        "number": 5,
+        "code": "02199",
+        "description": "Deck line not clear",
+        "actionCode": "10",
+        "regulatoryCite": "LL",
+        "cr5Contingency": "DECK LINE MAKE IN PAINTING.",
+        "cr5RootCause": "DECK LINE NOT CLEAR. / 01-09-2025. DIFICIENCY REMOVE UPPER DECK LINE.",
+        "cr6Correction": "DECK LINE MAKE IN PAINTING.",
+        "reviewAlerts": [
+          {
+            "type": "repeated",
+            "message": "CR-5 notes a prior deck line deficiency on 01-09-2025; same category repeated at PSC."
+          }
+        ],
+        "reviewQuestions": [
+          "What follow-up was done after the September 2025 deck line deficiency to prevent recurrence?"
+        ],
+        "reviewStatus": "reviewing"
+      }
+    ]
+  }
+]

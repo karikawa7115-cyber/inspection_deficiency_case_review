@@ -1,0 +1,32 @@
+[
+  {
+    "id": "v-demo-alpha",
+    "name": "DEMO VESSEL ALPHA",
+    "code": "PLR",
+    "status": "active"
+  },
+  {
+    "id": "v-demo-bravo",
+    "name": "DEMO VESSEL BRAVO",
+    "code": "FWD",
+    "status": "active"
+  },
+  {
+    "id": "v-demo-charlie",
+    "name": "DEMO VESSEL CHARLIE",
+    "code": "OBT",
+    "status": "active"
+  },
+  {
+    "id": "v-vessel-a",
+    "name": "VESSEL A",
+    "code": "VSA",
+    "status": "reserved"
+  },
+  {
+    "id": "v-vessel-b",
+    "name": "VESSEL B",
+    "code": "VSB",
+    "status": "reserved"
+  }
+]

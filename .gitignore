@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Public deploy excludes (local tools / internal docs — do not commit)
+scripts/pdf-extract-output.txt
+scripts/extract-pdf-text.mjs
+docs/ADS-group-presentation-google-meet.md
+.claude/skills/business-workflow-auditor/
+.claude/skills/data-structure-auditor/
+.claude/skills/four-pane-ui-auditor/
+.claude/skills/maritime-content-auditor/
