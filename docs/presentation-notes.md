@@ -2,8 +2,8 @@
 
 ## 提出物チェックリスト
 
-- [ ] **アプリ URL**: https://inspection-deficiency-case-review-8galz7wpk-arikawa.vercel.app
-- [ ] **図解 URL**: https://inspection-deficiency-case-review-8galz7wpk-arikawa.vercel.app/presentation.html
+- [ ] **アプリ URL**: https://inspection-deficiency-case-review.vercel.app/
+- [ ] **図解 URL**: https://inspection-deficiency-case-review.vercel.app/presentation.html
 - [ ] 画面キャプチャ（Case Review + Deficiency Database）を撮影済み
 - [ ] 発表時に図解 URL をホームチャンネルに共有
 
