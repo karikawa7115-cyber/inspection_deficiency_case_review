@@ -1,5 +1,15 @@
 # 明日の発表用メモ（5分）
 
+## 提出フォームに貼る URL（コピペ用）
+
+```
+アプリ URL:
+https://inspection-deficiency-case-review.vercel.app/
+
+図解 URL:
+https://inspection-deficiency-case-review.vercel.app/presentation.html
+```
+
 ## 提出物チェックリスト
 
 - [ ] **アプリ URL**: https://inspection-deficiency-case-review.vercel.app/

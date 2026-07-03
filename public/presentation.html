@@ -171,6 +171,28 @@
     .tag-blue { background: var(--primary-bg); color: var(--primary); }
     .tag-green { background: var(--success-bg); color: var(--success); }
     .tag-purple { background: var(--purple-bg); color: var(--purple); }
+    .submit-box {
+      background: #f0fdf4;
+      border: 2px solid #86efac;
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.25rem;
+    }
+    .submit-box h2 { border-bottom-color: #bbf7d0; color: #15803d; }
+    .copy-label { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .live-link {
+      display: inline-block;
+      margin: 0.25rem 0.5rem 0.25rem 0;
+      padding: 0.4rem 0.85rem;
+      background: var(--primary);
+      color: #fff !important;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      text-decoration: none;
+    }
+    .live-link:hover { background: #1d4ed8; }
+    .live-link.secondary { background: var(--purple); }
+    .live-link.secondary:hover { background: #6d28d9; }
     footer {
       text-align: center;
       color: var(--muted);
@@ -191,26 +213,51 @@
       </div>
     </header>
 
+    <!-- 0. 提出フォーム用（コピペ） -->
+    <section class="submit-box">
+      <h2>提出フォームに貼る URL</h2>
+      <p class="copy-label">① 公開したアプリの URL</p>
+      <div class="url-box">https://inspection-deficiency-case-review.vercel.app/</div>
+      <p class="copy-label" style="margin-top:1rem;">② 図解の URL（このページ）</p>
+      <div class="url-box">https://inspection-deficiency-case-review.vercel.app/presentation.html</div>
+      <p style="margin-top:0.75rem;font-size:0.85rem;color:var(--muted);">
+        ※ <code>-j3pg22wc8-</code> などハッシュ付き URL は個別デプロイ用です。提出には上記の本番 URL を使ってください。
+      </p>
+    </section>
+
     <!-- 1. 公開 URL -->
     <section>
       <h2>1. 公開 URL</h2>
       <h3>アプリ URL（Vercel）</h3>
       <div class="url-box">
-        <a href="/inspection" target="_blank" rel="noopener">/inspection を開く</a>
+        <a href="https://inspection-deficiency-case-review.vercel.app/" target="_blank" rel="noopener">
+          https://inspection-deficiency-case-review.vercel.app/
+        </a>
       </div>
-      <p>本番 URL（<code>...vercel.app</code>）のトップを開くと <code>/inspection</code> に自動リダイレクトされます。</p>
+      <p>トップを開くと Inspection Review Assistant（Case Review）が表示されます。</p>
       <h3>図解 URL（このページ）</h3>
       <div class="url-box">
-        本番 URL + <code>/presentation.html</code>
+        <a href="https://inspection-deficiency-case-review.vercel.app/presentation.html" target="_blank" rel="noopener">
+          https://inspection-deficiency-case-review.vercel.app/presentation.html
+        </a>
       </div>
     </section>
 
     <!-- 2. 画面キャプチャ -->
     <section>
       <h2>2. ツールの画面</h2>
+      <p>課題要件：ツールの画面キャプチャを図解に含めること。</p>
+      <p style="margin: 0.75rem 0;">
+        <a class="live-link" href="https://inspection-deficiency-case-review.vercel.app/" target="_blank" rel="noopener">
+          Case Review を開く
+        </a>
+        <a class="live-link secondary" href="https://inspection-deficiency-case-review.vercel.app/" target="_blank" rel="noopener">
+          Deficiency Database（P1 で切替）
+        </a>
+      </p>
       <div class="screenshot-note">
-        <strong>補足：</strong>発表前に実際の画面キャプチャを撮影し、この図解と一緒に共有してください。
-        上記アプリ URL を開き、Case Review 画面（4ペイン）と Deficiency Database 画面をそれぞれキャプチャするのがおすすめです。
+        発表前に上記リンクから実画面を開き、スクリーンショットを撮影してください。
+        個人情報は匿名化済み（DEMO VESSEL ALPHA 等）のため、そのまま掲載可能です。
       </div>
 
       <h3>4ペイン構成（Case Review モード）</h3>
