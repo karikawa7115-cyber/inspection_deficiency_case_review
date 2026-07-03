@@ -252,13 +252,19 @@ components/inspection/DeficiencyDatabaseView.tsx
 5. **Root Directory**  
    リポジトリ直下がプロジェクトルートなら **空欄のまま**。
 
-6. **Build 設定**（自動検出されない場合のみ明示）
+6. **Build 設定**（原則すべてデフォルトのまま。上書きしない）
 
    | 項目 | 値 |
    |---|---|
-   | Build Command | `npm run build` |
-   | Output Directory | `out` |
+   | Build Command | デフォルト（`next build` / `npm run build`） |
+   | Output Directory | **上書きしない（Override OFF / 空欄）** |
    | Install Command | `npm install`（デフォルト） |
+
+   > **重要:** `output: "export"`（静的エクスポート）では **Output Directory を `out` などに上書きしない**こと。
+   > Vercel の Next.js ビルダーがエクスポート出力を自動検出する。手動で `out` を指定すると
+   > `Routes Manifest Could Not Be Found`（`.next/routes-manifest.json` 不在）エラーになる。
+   > すでに `out` を指定してこのエラーが出た場合は、Project Settings →
+   > **Build & Development Settings** → **Output Directory** の **Override をオフ**にして Redeploy する。
 
 7. **Environment Variables を登録**（Deploy 前に必須）
 
