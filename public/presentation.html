@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inspection Review Assistant — 課題図解</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --primary-bg: #eff6ff;
+      --success: #059669;
+      --success-bg: #ecfdf5;
+      --warning: #d97706;
+      --warning-bg: #fffbeb;
+      --purple: #7c3aed;
+      --purple-bg: #f5f3ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 2rem 1rem 4rem;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    header {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      color: #fff;
+      border-radius: 16px;
+      padding: 2rem 2.5rem;
+      margin-bottom: 2rem;
+    }
+    header h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.5rem; }
+    header p { opacity: 0.9; font-size: 0.95rem; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+    .badge {
+      background: rgba(255,255,255,0.2);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 999px;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.8rem;
+    }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.25rem;
+    }
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--primary-bg);
+      color: var(--primary);
+    }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 1.25rem 0 0.5rem; }
+    p, li { font-size: 0.92rem; }
+    ul, ol { padding-left: 1.25rem; margin: 0.5rem 0; }
+    li { margin-bottom: 0.35rem; }
+    a { color: var(--primary); }
+    .url-box {
+      background: var(--primary-bg);
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-family: monospace;
+      font-size: 0.85rem;
+      word-break: break-all;
+      margin: 0.5rem 0;
+    }
+    .screenshot-note {
+      background: var(--warning-bg);
+      border: 1px dashed var(--warning);
+      border-radius: 8px;
+      padding: 1rem;
+      font-size: 0.85rem;
+      color: #92400e;
+      margin-bottom: 1rem;
+    }
+    .mockup {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr 1.5fr 1.3fr;
+      gap: 4px;
+      background: #cbd5e1;
+      border-radius: 8px;
+      padding: 4px;
+      min-height: 200px;
+      margin: 1rem 0;
+    }
+    .pane {
+      background: #fff;
+      border-radius: 4px;
+      padding: 0.5rem;
+      font-size: 0.7rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .pane-title {
+      font-weight: 700;
+      font-size: 0.65rem;
+      color: var(--primary);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 2px;
+    }
+    .pane-item {
+      background: var(--bg);
+      border-radius: 3px;
+      padding: 3px 5px;
+      font-size: 0.6rem;
+      color: var(--muted);
+    }
+    .pane-item.active { background: var(--primary-bg); color: var(--primary); font-weight: 600; }
+    .pane-item.warn { background: var(--warning-bg); color: var(--warning); }
+    .pane-item.ok { background: var(--success-bg); color: var(--success); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin: 0.75rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--bg); font-weight: 600; width: 28%; }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+    }
+    .flow-box {
+      background: var(--primary-bg);
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      text-align: center;
+      min-width: 100px;
+    }
+    .flow-box.store { background: var(--success-bg); border-color: #a7f3d0; }
+    .flow-box.db { background: var(--purple-bg); border-color: #ddd6fe; }
+    .flow-arrow { color: var(--muted); font-size: 1.2rem; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 640px) {
+      .mockup { grid-template-columns: 1fr 1fr; }
+      .two-col { grid-template-columns: 1fr; }
+      header { padding: 1.5rem; }
+      section { padding: 1.25rem; }
+    }
+    .tag {
+      display: inline-block;
+      border-radius: 4px;
+      padding: 0.1rem 0.45rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-right: 0.25rem;
+    }
+    .tag-blue { background: var(--primary-bg); color: var(--primary); }
+    .tag-green { background: var(--success-bg); color: var(--success); }
+    .tag-purple { background: var(--purple-bg); color: var(--purple); }
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Inspection Review Assistant</h1>
+      <p>船舶検査の指摘事項（PSC / Class / Flag / Internal Audit）をレビューし、フォローアップ文書を作成する業務ツール</p>
+      <div class="badge-row">
+        <span class="badge">AI-Driven School 第1期 日曜クラス</span>
+        <span class="badge">Next.js 16 + Supabase</span>
+        <span class="badge">Vercel 公開済み</span>
+      </div>
+    </header>
+
+    <!-- 1. 公開 URL -->
+    <section>
+      <h2>1. 公開 URL</h2>
+      <h3>アプリ URL（Vercel）</h3>
+      <div class="url-box">
+        <a href="https://inspection-deficiency-case-review-8galz7wpk-arikawa.vercel.app" target="_blank" rel="noopener">
+          https://inspection-deficiency-case-review-8galz7wpk-arikawa.vercel.app
+        </a>
+      </div>
+      <p>トップ URL を開くと <code>/inspection</code> に自動リダイレクトされます。</p>
+      <h3>図解 URL（このページ）</h3>
+      <div class="url-box">
+        https://inspection-deficiency-case-review-8galz7wpk-arikawa.vercel.app/presentation.html
+      </div>
+    </section>
+
+    <!-- 2. 画面キャプチャ -->
+    <section>
+      <h2>2. ツールの画面</h2>
+      <div class="screenshot-note">
+        <strong>補足：</strong>発表前に実際の画面キャプチャを撮影し、この図解と一緒に共有してください。
+        上記アプリ URL を開き、Case Review 画面（4ペイン）と Deficiency Database 画面をそれぞれキャプチャするのがおすすめです。
+      </div>
+
+      <h3>4ペイン構成（Case Review モード）</h3>
+      <div class="mockup" aria-label="4ペイン画面の構成図">
+        <div class="pane">
+          <div class="pane-title">P1 船舶・検査</div>
+          <div class="pane-item active">DEMO VESSEL ALPHA</div>
+          <div class="pane-item">PSC · PORT ALPHA</div>
+          <div class="pane-item">Deficiency Database →</div>
+        </div>
+        <div class="pane">
+          <div class="pane-title">P2 指摘一覧</div>
+          <div class="pane-item active">#1 Fire dampers</div>
+          <div class="pane-item warn">#2 Lifeboat · HIGH</div>
+          <div class="pane-item">#3 Documentation</div>
+        </div>
+        <div class="pane">
+          <div class="pane-title">P3 レビュー詳細</div>
+          <div class="pane-item warn">Alert: Root cause shallow</div>
+          <div class="pane-item">Vessel Cause</div>
+          <div class="pane-item">Preventive Action</div>
+        </div>
+        <div class="pane">
+          <div class="pane-title">P4 フォローアップ出力</div>
+          <div class="pane-item active">Review Comment</div>
+          <div class="pane-item">Vessel Revision EN</div>
+          <div class="pane-item ok">Handover Note ✓</div>
+        </div>
+      </div>
+      <p>P1 で船舶・検査を選び → P2 で指摘を選ぶ → P3 でレビュー → P4 でフォローアップ文書を編集・承認、という業務フローです。</p>
+    </section>
+
+    <!-- 3. 保持できるデータ -->
+    <section>
+      <h2>3. 保持できるようにしたデータ</h2>
+      <p>課題の核心「リロードしても消えないデータ」は、<strong>Case Review のフォローアップ編集内容</strong>です。</p>
+
+      <table>
+        <thead>
+          <tr><th>データ</th><th>内容</th><th>いつ保存されるか</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag tag-green">永続化</span>フォローアップ文書</td>
+            <td>Review Comment / Vessel Revision EN / Handover Note / Training Point / Owner Summary JP / Internal Audit Checklist の編集テキスト</td>
+            <td>テキストエリアを編集して保存したとき</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-green">永続化</span>承認ステータス</td>
+            <td>Supervisor 承認・DP 承認の記録、タブごとの draft / reviewing / approved 状態</td>
+            <td>承認ボタンを押したとき</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-blue">参照のみ</span>検査ケース・指摘</td>
+            <td>船舶名・港・指摘内容・リスクレベル・アラート</td>
+            <td>ビルド時に同梱の JSON から読み込み（変更不可）</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-purple">参照のみ</span>過去指摘データベース</td>
+            <td>16件の匿名化 deficiency（船・港・カテゴリ・ステータス）</td>
+            <td>Supabase から SELECT（読み取り専用）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>デモ確認方法（リロードしても消えないことを確認）</h3>
+      <ol>
+        <li>アプリを開き、P2 で指摘を1件選択</li>
+        <li>P4 の Review Comment タブでテキストを編集して保存</li>
+        <li>ブラウザをリロード（F5）</li>
+        <li>同じ指摘・同じタブを開く → <strong>編集内容が残っている</strong></li>
+      </ol>
+    </section>
+
+    <!-- 4. 保存先と理由 -->
+    <section>
+      <h2>4. 保存先と、それを選んだ理由</h2>
+
+      <div class="flow">
+        <div class="flow-box">ユーザー編集<br><small>P4 フォローアップ</small></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box store">localStorage<br><small>ブラウザ内</small></div>
+      </div>
+      <div class="flow">
+        <div class="flow-box">マスターデータ<br><small>検査ケース・指摘</small></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box">JSON ファイル<br><small>data/inspections/</small></div>
+      </div>
+      <div class="flow">
+        <div class="flow-box">過去指摘検索<br><small>Database View</small></div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-box db">Supabase PostgreSQL<br><small>read-only</small></div>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>保存先</th><th>用途</th><th>選んだ理由</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>localStorage</strong></td>
+            <td>ユーザーの編集・承認（課題の「記憶」）</td>
+            <td>
+              今月のプロトタイプでは認証・サーバー API なし。
+              ブラウザ内に保存すればリロード後も残り、実装が最もシンプル。
+              zod でスキーマ検証し、壊れたデータは無視する安全策も入れた。
+            </td>
+          </tr>
+          <tr>
+            <td><strong>JSON ファイル</strong></td>
+            <td>デモ用の検査ケース・指摘マスター</td>
+            <td>
+              静的エクスポート（Vercel）で DB 接続なしでも Case Review が動く。
+              匿名化サンプルデータを Git で管理しやすい。
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Supabase</strong></td>
+            <td>過去指摘の横断検索（Deficiency Database）</td>
+            <td>
+              複数船・複数検査のデータを SQL で検索・フィルタしたい。
+              RLS で SELECT のみに制限し、anon キーでも安全に公開できる。
+              「クラウド DB にデータを置く」体験を今月の範囲で実現。
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5. 工夫・苦戦 -->
+    <section>
+      <h2>5. 工夫したポイントと苦戦したポイント</h2>
+      <div class="two-col">
+        <div>
+          <h3>工夫したポイント</h3>
+          <ul>
+            <li><strong>4ペイン業務 UI</strong>：リスト → 詳細 → 出力の流れを船舶検査の実務に合わせた</li>
+            <li><strong>意味のある色分け</strong>：リスク（高/中/低）、アラート種別、承認状態を Badge で一目で判別</li>
+            <li><strong>2つのデータソース</strong>：Case Review（localStorage）と Database View（Supabase）を1画面で切替</li>
+            <li><strong>匿名化</strong>：公開 URL 用に実船名・実港名をすべて架空名に置換</li>
+            <li><strong>AI との協働</strong>：designing-workspace-ui スキルで UI 規律を守りながら開発</li>
+          </ul>
+        </div>
+        <div>
+          <h3>苦戦したポイント</h3>
+          <ul>
+            <li><strong>Vercel デプロイ</strong>：<code>output: "export"</code> と Vercel の期待する出力形式の不一致で数回エラー。ログを読んで <code>out/</code> 生成に戻して解決</li>
+            <li><strong>静的エクスポートの制約</strong>：サーバー側リダイレクトが使えず、<code>vercel.json</code> でルート <code>/</code> → <code>/inspection</code> を設定</li>
+            <li><strong>Supabase RLS</strong>：read-only ポリシーの設計と anon キーだけでの安全な公開</li>
+            <li><strong>今後やりたいこと</strong>：localStorage → Supabase への書き込み、ユーザー認証、複数人での共同レビュー</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. 発表用メモ -->
+    <section>
+      <h2>6. 発表の進め方（5分・3点）</h2>
+      <ol>
+        <li>
+          <strong>どんなデータを保持できるようにしたか</strong><br>
+          P4 のフォローアップ文書（6種類のタブ）の編集テキストと承認ステータス。
+          ブラウザの localStorage に保存し、リロードしても消えない。
+        </li>
+        <li>
+          <strong>どこに保存したか、なぜそこを選んだか</strong><br>
+          ユーザーの編集は localStorage（認証なしプロトタイプで最も手軽）。
+          マスターデータは JSON（静的配信）、過去指摘検索は Supabase（SQL 検索が必要なため）。
+        </li>
+        <li>
+          <strong>作ってみてどう感じたか</strong><br>
+          業務ツールの UI を AI と一緒に作ると、色やレイアウトの「意味」を言語化する大切さが分かった。
+          Vercel デプロイは設定とログの読み解きが必要で、エラーメッセージを AI に貼ると早く解決できた。
+        </li>
+      </ol>
+      <p style="margin-top:1rem;color:var(--muted);font-size:0.85rem;">
+        発表時は Google Meet で画面共有し、この図解 URL もホームチャンネルに共有してください。
+      </p>
+    </section>
+
+    <footer>
+      Inspection Review Assistant — AI-Driven School 課題提出用図解<br>
+      GitHub: karikawa7115-cyber/inspection_deficiency_case_review
+    </footer>
+  </div>
+</body>
+</html>
