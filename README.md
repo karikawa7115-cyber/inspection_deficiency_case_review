@@ -202,7 +202,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
 | 項目 | 今月の方針 |
 |---|---|
-| クライアント接続 | `NEXT_PUBLIC_*` の anon キー（静的エクスポートのためブラウザに含まれる） |
+| クライアント接続 | `NEXT_PUBLIC_*` の anon キー（クライアント側 SELECT のためブラウザに含まれる） |
 | RLS | 有効。`anon` / `authenticated` は **SELECT のみ** |
 | 書き込み | INSERT / UPDATE / DELETE は実装しない |
 | データ | seed は匿名化のみ。実船名・実港名は入れない |
@@ -225,7 +225,8 @@ components/inspection/DeficiencyDatabaseView.tsx
 ## Vercel へデプロイする（Inspection Review Assistant 公開）
 
 課題提出用に `/inspection`（Case Review + Deficiency Database）を Vercel で公開する手順です。
-本プロジェクトは `output: "export"` の**静的エクスポート**構成です。Supabase 接続はブラウザから `anon` キーで **SELECT のみ**行います。
+全ページが**静的プリレンダリング**され、Supabase 接続はブラウザから `anon` キーで **SELECT のみ**行います（サーバー実行なし）。
+Vercel では **Next.js のネイティブビルド**（`.next` 出力）をそのまま使うため、特別な設定は不要です。
 
 対象リポジトリ例: [inspection_deficiency_case_review](https://github.com/karikawa7115-cyber/inspection_deficiency_case_review)
 
@@ -260,10 +261,11 @@ components/inspection/DeficiencyDatabaseView.tsx
    | Output Directory | **上書きしない（Override OFF / 空欄）** |
    | Install Command | `npm install`（デフォルト） |
 
-   > **重要:** `output: "export"`（静的エクスポート）では **Output Directory を `out` などに上書きしない**こと。
-   > Vercel の Next.js ビルダーがエクスポート出力を自動検出する。手動で `out` を指定すると
-   > `Routes Manifest Could Not Be Found`（`.next/routes-manifest.json` 不在）エラーになる。
-   > すでに `out` を指定してこのエラーが出た場合は、Project Settings →
+   > **重要:** Vercel はネイティブの Next.js ビルド（`.next`）を自動検出する。
+   > **Output Directory を `out` などに上書きしない**こと（Override は必ずオフ／空欄）。
+   > 手動で `out` を指定すると `.next/routes-manifest.json` が見つからず
+   > `Routes Manifest Could Not Be Found` エラーになる。
+   > すでに上書きしてこのエラーが出ている場合は、Project Settings →
    > **Build & Development Settings** → **Output Directory** の **Override をオフ**にして Redeploy する。
 
 7. **Environment Variables を登録**（Deploy 前に必須）

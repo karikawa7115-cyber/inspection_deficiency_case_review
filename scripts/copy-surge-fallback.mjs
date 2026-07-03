@@ -7,9 +7,11 @@ const index = resolve(out, "index.html");
 const inspection = resolve(out, "inspection.html");
 const fallback = resolve(out, "200.html");
 
+// `out/` は静的エクスポート（NEXT_OUTPUT_EXPORT=true）でのみ生成される。
+// Vercel などネイティブ Next.js ビルドでは存在しないので、その場合は何もしない。
 if (!existsSync(index)) {
-  console.error("out/index.html not found. Run npm run build first.");
-  process.exit(1);
+  console.log("out/index.html not found — skipping Surge fallback (native build).");
+  process.exit(0);
 }
 
 const entry = existsSync(inspection) ? inspection : index;
