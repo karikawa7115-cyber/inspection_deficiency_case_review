@@ -13,6 +13,7 @@ import { GOLDEN_CASE_SPECS } from "../lib/mdd/golden/specs";
 import { getGoldenCaseCdq } from "../lib/mdd/golden/cdq-envelopes";
 import { runGoldenLlmEvalPipeline } from "../lib/mdd/golden/llm-eval-v1";
 import { isDecisionControlV01Enabled } from "../lib/mdd/decision-control";
+import { isSemanticRefillV03Enabled } from "../lib/mdd/semantic-refill";
 import { resolveFinanceGateActivation } from "../lib/mdd/quality-gate/finance-activation-v1.1";
 import {
   parseMddStructuredOutputStructural,
@@ -87,6 +88,7 @@ type CaseRunRecord = {
     criticalFailures: { code: string; message: string }[];
     warnings: { code: string; message: string }[];
   };
+  semanticRefill?: unknown;
   goldenEvaluation?: {
     overall: string;
     criticalFailCodes: string[];
@@ -243,6 +245,7 @@ async function main() {
               controlled: summarizeDraft(dc.controlled),
             }
           : undefined,
+        semanticRefill: report.semanticRefill ?? null,
         qualityGate: {
           passed: report.qualityGate.passed,
           enforcedReadiness: report.qualityGate.enforcedReadiness,
@@ -294,12 +297,15 @@ async function main() {
       : "custom-openai-compatible",
     model: config.model,
     baseUrl: config.baseUrl,
-    note: "Decision Pipeline v0.1.2: Control → Gate-owned qualityGate/readiness → Canonical Assembly → Canonical Schema. Quality Gate v1.1. Model gpt-4o-mini. Frozen Prompt/Schema/Golden Spec/Eval not tuned after run.",
+    note: "Decision Pipeline v0.1.2 + Semantic Refill v0.3 (if flagged): Control → Refill → Gate-owned qualityGate/readiness → Canonical Assembly → Canonical Schema. Quality Gate v1.1. No post-run tuning.",
     responseFormat: "json_schema_strict",
     qualityGateVersion: "1.1",
     decisionControlVersion: isDecisionControlV01Enabled() ? "0.1+0.1.1" : "off",
+    semanticRefillVersion: isSemanticRefillV03Enabled() ? "0.3" : "off",
+    semanticRefillModel:
+      process.env.MDD_SEMANTIC_REFILL_MODEL?.trim() || config.model,
     pipeline:
-      "Raw+CDQ → LLM → Pre-Control Structural → Decision Control → Quality Gate v1.1 → Enforced Readiness → Canonical Assembly → Canonical Schema v1.0 → Golden Eval",
+      "Raw+CDQ → LLM → Pre-Control Structural → Decision Control/Policy → Semantic Refill v0.3 (if triggered) → Quality Gate v1.1 → Enforced Readiness → Canonical Assembly → Canonical Schema v1.0 → Golden Eval",
     cases,
   };
 
@@ -313,6 +319,7 @@ async function main() {
     `- Model: ${payload.model}`,
     `- Base URL: ${payload.baseUrl}`,
     `- Decision Control: ${payload.decisionControlVersion}`,
+    `- Semantic Refill: ${payload.semanticRefillVersion} (model=${payload.semanticRefillModel})`,
     `- Pipeline: ${payload.pipeline}`,
     ``,
     `## Summary`,

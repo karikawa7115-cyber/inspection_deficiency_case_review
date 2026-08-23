@@ -58,6 +58,7 @@ export async function runSemanticRefillStage(
       : resolveSemanticRefillModel(env));
 
   let proposedText = options.proposedText;
+  let latencyMs: number | undefined;
   if (proposedText == null) {
     if (!options.llmConfig) {
       return null;
@@ -72,6 +73,7 @@ export async function runSemanticRefillStage(
       options.llmConfig,
     );
     proposedText = llm.text;
+    latencyMs = llm.latencyMs;
   }
 
   return applySemanticRefillV03({
@@ -82,5 +84,6 @@ export async function runSemanticRefillStage(
     proposedText,
     model,
     nowIso: options.nowIso,
+    latencyMs,
   });
 }

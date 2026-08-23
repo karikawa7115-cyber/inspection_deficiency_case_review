@@ -30,6 +30,10 @@ export type SemanticRefillAudit = {
   validationResult: "accepted" | "rejected" | "skipped";
   validationCodes: RefillValidationCode[];
   applied: boolean;
+  /** Live LLM refill latency when network call was made. */
+  latencyMs?: number;
+  /** NSF at trigger time (always true when triggered). */
+  needsSemanticFillBefore?: boolean;
 };
 
 export type SemanticRefillResult = {
@@ -82,6 +86,7 @@ export function applySemanticRefillV03(input: {
   proposedText: string;
   model: string;
   nowIso?: string;
+  latencyMs?: number;
 }): SemanticRefillResult {
   const at = input.nowIso ?? new Date().toISOString();
   const originalPd = {
@@ -174,6 +179,8 @@ export function applySemanticRefillV03(input: {
         validationResult: "rejected",
         validationCodes: validation.codes,
         applied: false,
+        latencyMs: input.latencyMs,
+        needsSemanticFillBefore: true,
       },
     };
   }
@@ -213,6 +220,8 @@ export function applySemanticRefillV03(input: {
       validationResult: "accepted",
       validationCodes: [],
       applied: true,
+      latencyMs: input.latencyMs,
+      needsSemanticFillBefore: true,
     },
   };
 }
