@@ -1,105 +1,50 @@
 /**
- * Quality Gate Rules v1.0 evaluator.
- * Human SSoT: docs/mdd/QUALITY_GATE_RULES_v1.0.md (frozen).
- * Output compatible with Structured Output Schema v1.0 qualityGate.
+ * Quality Gate Rules v1.1 (frozen, active) evaluator.
+ * Human SSoT: docs/mdd/QUALITY_GATE_RULES_v1.1.md
+ * Clarifies decision-stage-aware CRITICAL_FACT_MISSING vs v1.0.
+ * Does not weaken Schema enums / authority / review / boundary rules.
  * Does not connect production LLM.
  */
-import type { CaseType, DecisionReadiness } from "../types";
-import type { MddStructuredOutput } from "../schema/structured-output-v1";
+import type {
+  CriticalOverrideRecord,
+  GateFinding,
+  GateFindingCode,
+  QualityGateEvaluation,
+  QualityGateSubject,
+} from "./evaluate-v1";
+import {
+  subjectFromProposal,
+  subjectFromStructuredOutput,
+  toSchemaQualityGate,
+} from "./evaluate-v1";
 
-export type GateFindingCode =
-  | "CRITICAL_FACT_MISSING"
-  | "SAFETY_OR_COMPLIANCE_UNRESOLVED"
-  | "DECISION_AUTHORITY_UNCLEAR"
-  | "PROFESSIONAL_BOUNDARY_VIOLATION"
-  | "RECOMMENDATION_UNSUPPORTED"
-  | "FINANCIAL_DEPENDENCY_UNRESOLVED"
-  | "FACT_RECOMMENDATION_CONTRADICTION"
-  | "WARN_SHALLOW_ROOT_CAUSE"
-  | "WARN_HYPOTHESIS_AS_FACT_RISK"
-  | "WARN_OPTIONAL_DETAIL_MISSING"
-  | "WARN_OPTIONAL_EVIDENCE_MISSING"
-  | "WARN_MONITOR_REVIEW"
-  | "WARN_STALE_OR_CURRENT_INFO"
-  | "WARN_WEAK_DELEGATION"
-  | "WARN_OVERLONG_EXECUTIVE"
-  | "WARN_UNNECESSARY_ESCALATION"
-  | "WARN_REVIEW_LEARNING_OPPORTUNITY";
+export type {
+  CriticalOverrideRecord,
+  GateFinding,
+  GateFindingCode,
+  QualityGateEvaluation,
+  QualityGateSubject,
+} from "./evaluate-v1";
 
-export type GateFinding = {
-  code: GateFindingCode;
-  message: string;
-  relatedFieldPaths?: string[];
+export {
+  subjectFromProposal,
+  subjectFromStructuredOutput,
+  toSchemaQualityGate,
 };
 
-/** Explicit auditable proceed-despite-Critical; does NOT clear findings or set READY. */
-export type CriticalOverrideRecord = {
-  overriddenCodes: GateFindingCode[];
-  actor: string;
-  at: string;
-  justification: string;
-  proceedDespiteCritical: true;
-  safetyComplianceAcknowledgement?: boolean;
-};
+/** Decision-stage classification for missing information (v1.1 §2.1.1). */
+export type MissingInformationStage =
+  | "DECISION_BLOCKING"
+  | "EXECUTION_CONDITION"
+  | "CLOSURE_OR_EFFECTIVENESS_CONDITION";
 
-export type QualityGateSubject = {
-  primaryCaseType: CaseType;
-  tags: string[];
-  decisionReadiness: DecisionReadiness;
-  recommendation: string;
-  presidentDecision: string;
-  why: string;
-  decisionAuthorities: { roleLabel: string; authority: string }[];
-  nextActions: { who: string; what: string; dueOrTrigger?: string }[];
-  confirmedTexts: string[];
-  unverifiedTexts: string[];
-  assumptionTexts: string[];
-  missing: {
-    text: string;
-    who: string;
-    what: string;
-    evidenceRequired: string;
-    blocksReadiness?: boolean;
-  }[];
-  risks: string[];
-  optionsCount: number;
-  professionalBoundaryIssues: string[];
-  learning: {
-    managementReviewCandidate: boolean;
-    internalAuditCandidate: boolean;
-    knowledgeUpdateCandidate: boolean;
-    notes?: string;
-  };
-  reviewCandidate: {
-    flag: boolean;
-    monitorOnly?: boolean;
-  };
-  finance?: {
-    present: boolean;
-    separationPreserved: boolean;
-    liquidityConfirmed: boolean;
-    doNotAuthorizePayment: boolean;
-  };
-  /**
-   * When false, Finance Critical checks are inactive even if finance.present.
-   * Undefined → derive via resolveFinanceGateActivation defaults (type + finance.present legacy).
-   * v0.1.1 callers should set explicitly from F1∨F2∨F3.
-   */
-  financeGateActive?: boolean;
-  /** True when output implies Company closure / closed on photos. */
-  impliesClosure: boolean;
-  override?: CriticalOverrideRecord | null;
-};
-
-export type QualityGateEvaluation = {
-  passed: boolean;
-  criticalFailures: GateFinding[];
-  warnings: GateFinding[];
-  evaluatedAt: string;
-  /** Never READY while criticalFailures remain (override does not change this). */
-  enforcedReadiness: DecisionReadiness;
-  /** Human chose to proceed despite Critical; readiness still not READY. */
-  proceedDespiteCritical: boolean;
+export type MissingInformationClassification = {
+  stage: MissingInformationStage;
+  text: string;
+  who: string;
+  what: string;
+  evidenceRequired: string;
+  blocksReadinessHint?: boolean;
 };
 
 function finding(
@@ -122,9 +67,11 @@ function rootCauseMateriallyRequired(subject: QualityGateSubject): boolean {
     return true;
   }
   return subject.tags.some((t) =>
-    ["root_cause_required", "horizontal_check", "effectiveness_verification"].includes(
-      t.toLowerCase(),
-    ),
+    [
+      "root_cause_required",
+      "horizontal_check",
+      "effectiveness_verification",
+    ].includes(t.toLowerCase()),
   );
 }
 
@@ -142,13 +89,110 @@ function challengesShallowRootCause(text: string): boolean {
 
 const EXEC_LONG_CHARS = 1800;
 
+const CLOSURE_OR_EFFECTIVENESS_RE =
+  /root\s*cause|horizontal\s*check|effectiveness|corrective\s*action|preventive\s*action|closure\s*evidence|verify\s*effectiveness|effectiveness\s*verification|system\s*weakness\s*evidence|person\s*(?:→|->)\s*procedure/i;
+
+const EXECUTION_CONDITION_RE =
+  /class\s*nk|classnk|class\s+(?:confirmation|acceptance|clarification|reply|response)|written\s+class|re-?confirmation|company\s+liquidity|liquidity\s+confirm|current\s+(?:cash|liquidity|smbc)|remittance|before\s+(?:remit|transfer|payment|execution)|final\s+(?:ctm|approval|remittance)|payee|execution\s+confirm|focused\s+confirmation/i;
+
+const DECISION_BLOCKING_RE =
+  /cannot\s+decide|blocks?\s+(?:the\s+)?decision|decision\s+cannot|unable\s+to\s+(?:decide|determine)|unknown\s+whether\s+(?:a\s+)?(?:safety|manning|emergency)|principal\s+direction\s+unknown|no\s+basis\s+to\s+decide/i;
+
 /**
- * Evaluate Quality Gate Rules v1.0 against a subject.
- * If `proposedReadiness` would be READY with criticals, enforcedReadiness demotes it.
+ * Classify one missing-information item by decision stage.
+ * `blocksReadiness` is a hint only — stage is authoritative for Critical emission.
  */
-export function evaluateQualityGateV1(
+export function classifyMissingInformationStage(
+  item: {
+    text: string;
+    who: string;
+    what: string;
+    evidenceRequired: string;
+    blocksReadiness?: boolean;
+  },
+  ctx?: { primaryCaseType?: string; tags?: string[] },
+): MissingInformationStage {
+  const hay = blob([
+    item.text,
+    item.who,
+    item.what,
+    item.evidenceRequired,
+  ]);
+
+  if (DECISION_BLOCKING_RE.test(hay)) {
+    return "DECISION_BLOCKING";
+  }
+
+  if (CLOSURE_OR_EFFECTIVENESS_RE.test(hay)) {
+    return "CLOSURE_OR_EFFECTIVENESS_CONDITION";
+  }
+
+  if (EXECUTION_CONDITION_RE.test(hay)) {
+    return "EXECUTION_CONDITION";
+  }
+
+  // Case-type priors for common Golden alignments when wording is thin
+  if (
+    ctx?.primaryCaseType === "TECHNICAL" &&
+    /class|cms|acceptance|scope/i.test(hay)
+  ) {
+    return "EXECUTION_CONDITION";
+  }
+  if (
+    ctx?.primaryCaseType === "FINANCE_COMMERCIAL" &&
+    /liquidity|cash|ctm|afford/i.test(hay)
+  ) {
+    return "EXECUTION_CONDITION";
+  }
+  if (
+    (ctx?.primaryCaseType === "INSPECTION_COMPLIANCE" ||
+      ctx?.primaryCaseType === "ISM_MANAGEMENT" ||
+      ctx?.tags?.some((t) =>
+        /root_cause|horizontal|effectiveness/i.test(t),
+      )) &&
+    /confirm|evidence|verification|deficiency|rectif/i.test(hay)
+  ) {
+    return "CLOSURE_OR_EFFECTIVENESS_CONDITION";
+  }
+
+  // JP port / ETA style optional detail
+  if (/port|eta|schedule|travel\s+doc/i.test(hay)) {
+    return "EXECUTION_CONDITION";
+  }
+
+  // Residual: only treat as decision-blocking when model asserted blocksReadiness
+  // and no execution/closure pattern matched — truly unknown material gap.
+  if (item.blocksReadiness === true) {
+    return "DECISION_BLOCKING";
+  }
+
+  return "EXECUTION_CONDITION";
+}
+
+function classifyAllMissing(
   subject: QualityGateSubject,
-): QualityGateEvaluation {
+): MissingInformationClassification[] {
+  return subject.missing.map((m) => ({
+    stage: classifyMissingInformationStage(m, {
+      primaryCaseType: subject.primaryCaseType,
+      tags: subject.tags,
+    }),
+    text: m.text,
+    who: m.who,
+    what: m.what,
+    evidenceRequired: m.evidenceRequired,
+    blocksReadinessHint: m.blocksReadiness,
+  }));
+}
+
+/**
+ * Evaluate Quality Gate Rules v1.1 (candidate) against a subject.
+ */
+export function evaluateQualityGateV1_1(
+  subject: QualityGateSubject,
+): QualityGateEvaluation & {
+  missingClassifications: MissingInformationClassification[];
+} {
   const criticalFailures: GateFinding[] = [];
   const warnings: GateFinding[] = [];
   const prose = blob([
@@ -160,7 +204,13 @@ export function evaluateQualityGateV1(
     ...subject.assumptionTexts,
     subject.learning.notes ?? "",
   ]);
-  const recWhy = blob([subject.recommendation, subject.presidentDecision, subject.why]);
+  const recWhy = blob([
+    subject.recommendation,
+    subject.presidentDecision,
+    subject.why,
+  ]);
+
+  const missingClassifications = classifyAllMissing(subject);
 
   // --- Critical: authorities ---
   if (subject.decisionAuthorities.length === 0) {
@@ -189,27 +239,89 @@ export function evaluateQualityGateV1(
     );
   }
 
-  // --- Critical: missing facts ---
-  for (const m of subject.missing) {
-    if (m.blocksReadiness) {
-      criticalFailures.push(
+  // --- Critical / Warning: missing facts (stage-aware) ---
+  let hasDecisionBlockingMissing = false;
+  let hasExecutionOrClosureOnly = false;
+  const executionOrClosure = missingClassifications.filter(
+    (c) =>
+      c.stage === "EXECUTION_CONDITION" ||
+      c.stage === "CLOSURE_OR_EFFECTIVENESS_CONDITION",
+  );
+  const decisionBlocking = missingClassifications.filter(
+    (c) => c.stage === "DECISION_BLOCKING",
+  );
+
+  for (const c of decisionBlocking) {
+    hasDecisionBlockingMissing = true;
+    criticalFailures.push(
+      finding(
+        "CRITICAL_FACT_MISSING",
+        `Decision-blocking missing information: ${c.text} (who: ${c.who}).`,
+        ["facts.missingInformation", "missingInformation.stage:DECISION_BLOCKING"],
+      ),
+    );
+  }
+
+  if (executionOrClosure.length > 0 && decisionBlocking.length === 0) {
+    hasExecutionOrClosureOnly = true;
+  }
+
+  for (const c of executionOrClosure) {
+    if (c.stage === "CLOSURE_OR_EFFECTIVENESS_CONDITION") {
+      if (rootCauseMateriallyRequired(subject)) {
+        warnings.push(
+          finding(
+            "WARN_SHALLOW_ROOT_CAUSE",
+            `Closure/effectiveness condition remains open: ${c.text}`,
+            [
+              "facts.missingInformation",
+              "missingInformation.stage:CLOSURE_OR_EFFECTIVENESS_CONDITION",
+            ],
+          ),
+        );
+      } else {
+        warnings.push(
+          finding(
+            "WARN_OPTIONAL_EVIDENCE_MISSING",
+            `Closure/effectiveness condition (non-blocking for current decision): ${c.text}`,
+            [
+              "facts.missingInformation",
+              "missingInformation.stage:CLOSURE_OR_EFFECTIVENESS_CONDITION",
+            ],
+          ),
+        );
+      }
+    } else {
+      // EXECUTION_CONDITION
+      const liquidityLike =
+        /liquidity|cash|remittance|ctm/i.test(c.text) ||
+        /liquidity|cash|remittance|ctm/i.test(c.what);
+      warnings.push(
         finding(
-          "CRITICAL_FACT_MISSING",
-          `Blocking missing information: ${m.text} (who: ${m.who}).`,
-          ["facts.missingInformation"],
+          liquidityLike
+            ? "WARN_STALE_OR_CURRENT_INFO"
+            : "WARN_OPTIONAL_EVIDENCE_MISSING",
+          `Execution condition (direction may proceed CONDITIONAL): ${c.text}`,
+          [
+            "facts.missingInformation",
+            "missingInformation.stage:EXECUTION_CONDITION",
+          ],
         ),
       );
     }
   }
+
+  // Optional missings already classified as EXECUTION without blocks — covered above.
+  // Items with no text match that returned EXECUTION via residual false blocksReadiness
+  // are included in executionOrClosure.
 
   // --- Critical: safety / compliance ---
   if (
     /safety emergency|minimum safe manning emergency|must replace immediately for safety/i.test(
       recWhy,
     ) &&
-    /no immediate (?:safety|manning)/i.test(
-      blob(subject.confirmedTexts),
-    ) === false &&
+    /no immediate (?:safety|manning)/i.test(blob(subject.confirmedTexts)) ===
+      false &&
     /invent|force nansha|insist on nansha/i.test(recWhy)
   ) {
     criticalFailures.push(
@@ -247,7 +359,9 @@ export function evaluateQualityGateV1(
     );
   }
   if (
-    /earth.?fault.*(?:closed|cleared)|declare.*electrical.*closed/i.test(recWhy) &&
+    /earth.?fault.*(?:closed|cleared)|declare.*electrical.*closed/i.test(
+      recWhy,
+    ) &&
     !/do not declare|must not declare|tech(?:nical)? (?:supt|superintendent)/i.test(
       recWhy,
     )
@@ -272,10 +386,13 @@ export function evaluateQualityGateV1(
     );
   }
 
-  // --- Finance dependency (skip non-finance) ---
+  // --- Finance dependency (v0.1.1 P1: F1∨F2∨F3; F0 = extension alone insufficient) ---
+  // Callers should set financeGateActive via resolveFinanceGateActivation.
+  // If unset: F1 only (FINANCE_COMMERCIAL) — do NOT treat llm finance.present alone as active.
   const financeActive =
-    subject.primaryCaseType === "FINANCE_COMMERCIAL" ||
-    subject.finance?.present === true;
+    subject.financeGateActive === true ||
+    (subject.financeGateActive === undefined &&
+      subject.primaryCaseType === "FINANCE_COMMERCIAL");
   if (financeActive) {
     if (subject.finance && subject.finance.separationPreserved === false) {
       criticalFailures.push(
@@ -297,10 +414,7 @@ export function evaluateQualityGateV1(
         ),
       );
     }
-    if (
-      subject.finance &&
-      subject.finance.doNotAuthorizePayment === false
-    ) {
+    if (subject.finance && subject.finance.doNotAuthorizePayment === false) {
       criticalFailures.push(
         finding(
           "PROFESSIONAL_BOUNDARY_VIOLATION",
@@ -321,7 +435,11 @@ export function evaluateQualityGateV1(
         ),
       );
     }
-    if (/treat.*receipt.*as (?:received|confirmed)|uncertain future receipts as received/i.test(recWhy)) {
+    if (
+      /treat.*receipt.*as (?:received|confirmed)|uncertain future receipts as received/i.test(
+        recWhy,
+      )
+    ) {
       criticalFailures.push(
         finding(
           "FINANCIAL_DEPENDENCY_UNRESOLVED",
@@ -400,7 +518,6 @@ export function evaluateQualityGateV1(
         );
       }
     } else if (challenged && subject.decisionReadiness !== "READY") {
-      // RC-required CONDITIONAL briefs that explicitly challenge causes (GC03)
       warnings.push(
         finding(
           "WARN_SHALLOW_ROOT_CAUSE",
@@ -410,14 +527,17 @@ export function evaluateQualityGateV1(
     }
   }
 
-  // --- Stale info: warn; escalate when material ---
+  // --- Stale info: warn; escalate when material READY ---
   const staleHint =
     /as of|liquidity|current (?:cash|class|flag|crew|document|survey)|near (?:the )?remittance|time-sensitive/i.test(
       prose,
     ) &&
     (subject.finance?.liquidityConfirmed === false ||
       /unconfirmed|not yet|pending confirmation|near remittance/i.test(prose));
-  if (staleHint || (financeActive && subject.finance?.liquidityConfirmed === false)) {
+  if (
+    staleHint ||
+    (financeActive && subject.finance?.liquidityConfirmed === false)
+  ) {
     const materialReadyClaim = subject.decisionReadiness === "READY";
     if (materialReadyClaim && financeActive) {
       criticalFailures.push(
@@ -441,17 +561,6 @@ export function evaluateQualityGateV1(
         ),
       );
     }
-  }
-
-  // --- Optional evidence ---
-  const optionalMissing = subject.missing.filter((m) => !m.blocksReadiness);
-  if (optionalMissing.length > 0) {
-    warnings.push(
-      finding(
-        "WARN_OPTIONAL_EVIDENCE_MISSING",
-        `Non-blocking missing information: ${optionalMissing.map((m) => m.text).join("; ")}`,
-      ),
-    );
   }
 
   // --- Weak delegation ---
@@ -550,7 +659,6 @@ export function evaluateQualityGateV1(
     );
   }
 
-  // Deduplicate by code+message
   const dedupe = (list: GateFinding[]) => {
     const seen = new Set<string>();
     return list.filter((f) => {
@@ -565,9 +673,10 @@ export function evaluateQualityGateV1(
 
   const passed = criticals.length === 0;
   let enforcedReadiness = subject.decisionReadiness;
+
+  // READY forbidden while any Critical remains
   if (!passed && enforcedReadiness === "READY") {
     enforcedReadiness = financeActive ? "CONDITIONAL" : "NOT_READY";
-    // Prefer CONDITIONAL when a direction exists but criticals remain (Schema R3)
     if (
       subject.recommendation.trim().length > 0 &&
       criticals.every((c) => c.code !== "SAFETY_OR_COMPLIANCE_UNRESOLVED")
@@ -576,7 +685,36 @@ export function evaluateQualityGateV1(
     }
   }
 
-  // Critical override: proceed allowed; never READY; findings remain
+  // EXECUTION / CLOSURE only → do not auto-force NOT_READY
+  if (
+    passed &&
+    hasExecutionOrClosureOnly &&
+    !hasDecisionBlockingMissing &&
+    enforcedReadiness === "NOT_READY"
+  ) {
+    enforcedReadiness = "CONDITIONAL";
+  }
+
+  // READY + material execution/closure conditions (Class confirm, liquidity, RC closure)
+  // → CONDITIONAL. Ordinary non-material warnings (e.g. JP port/ETA) must NOT downgrade READY.
+  if (passed && enforcedReadiness === "READY") {
+    const materialPending = executionOrClosure.some((c) => {
+      const t = `${c.text} ${c.what}`.toLowerCase();
+      if (
+        /\b(port|eta)\b/.test(t) &&
+        !/class|liquidity|root\s*cause|horizontal|effectiveness/.test(t)
+      ) {
+        return false;
+      }
+      return /class(?:nk)?|liquidity|remittance|root\s*cause|horizontal|effectiveness|corrective\s*action/.test(
+        t,
+      );
+    });
+    if (materialPending) {
+      enforcedReadiness = "CONDITIONAL";
+    }
+  }
+
   const override = subject.override;
   const proceedDespiteCritical = Boolean(
     override?.proceedDespiteCritical &&
@@ -596,187 +734,6 @@ export function evaluateQualityGateV1(
     evaluatedAt: new Date().toISOString(),
     enforcedReadiness,
     proceedDespiteCritical: proceedDespiteCritical && !passed,
-  };
-}
-
-/** Map Schema v1.0 structured output into a gate subject. */
-export function subjectFromStructuredOutput(
-  output: MddStructuredOutput,
-  extra?: Partial<QualityGateSubject>,
-): QualityGateSubject {
-  return {
-    primaryCaseType: output.primaryCaseType,
-    tags: output.tags,
-    decisionReadiness: output.executive.decisionReadiness,
-    recommendation: output.executive.recommendation.text,
-    presidentDecision: output.executive.presidentDecision.text,
-    why: output.executive.why.text,
-    decisionAuthorities: output.executive.decisionAuthorities.map((a) => ({
-      roleLabel: a.roleLabel,
-      authority: a.authority,
-    })),
-    nextActions: output.executive.nextActions.map((a) => ({
-      who: a.who,
-      what: a.what,
-      dueOrTrigger: a.dueOrTrigger,
-    })),
-    confirmedTexts: output.facts.confirmed.map((f) => f.text),
-    unverifiedTexts: output.facts.unverified.map((f) => f.text),
-    assumptionTexts: output.facts.assumptions.map((f) => f.text),
-    missing: output.facts.missingInformation.map((m) => ({
-      text: m.text,
-      who: m.who,
-      what: m.what,
-      evidenceRequired: m.evidenceRequired,
-      blocksReadiness: m.blocksReadiness,
-    })),
-    risks: output.risks,
-    optionsCount: output.options.length,
-    professionalBoundaryIssues: output.professionalBoundaries.map((p) => p.issue),
-    learning: {
-      managementReviewCandidate: output.learning.managementReviewCandidate,
-      internalAuditCandidate: output.learning.internalAuditCandidate,
-      knowledgeUpdateCandidate: output.learning.knowledgeUpdateCandidate,
-      notes: output.learning.notes,
-    },
-    reviewCandidate: {
-      flag: output.reviewCandidate.flag,
-      monitorOnly: output.reviewCandidate.monitorOnly,
-    },
-    finance: output.finance
-      ? {
-          present: true,
-          separationPreserved: output.finance.separationPreserved,
-          liquidityConfirmed:
-            output.finance.companyFinancialFeasibility?.liquidityConfirmed ===
-              true ||
-            output.finance.sourceFacts?.companyLiquidityConfirmed === true ||
-            output.finance.snapshot?.companyLiquidityConfirmed === true,
-          doNotAuthorizePayment: output.finance.doNotAuthorizePayment,
-        }
-      : undefined,
-    impliesClosure: /treat.*closed|case (?:is )?closed|close (?:the )?case/i.test(
-      `${output.executive.recommendation.text} ${output.executive.presidentDecision.text}`,
-    ) &&
-      !/do not treat|not treat.*closed|must not close|do not close/i.test(
-        `${output.executive.recommendation.text} ${output.executive.presidentDecision.text}`,
-      ),
-    ...extra,
-  };
-}
-
-/** Adapter from Phase-1 DecisionBrief-shaped proposal. */
-export function subjectFromProposal(input: {
-  primaryCaseType: CaseType;
-  tags?: string[];
-  recommendation: string;
-  presidentDecision: string;
-  why: string;
-  decisionReadiness: DecisionReadiness;
-  decisionAuthorities: { roleLabel: string; authority: string }[];
-  nextActions?: { owner: string; text: string; dueDate?: string }[];
-  confirmedFacts?: { text: string }[];
-  unverifiedFacts?: { text: string }[];
-  assumptions?: { text: string }[];
-  missingInformation?: {
-    text: string;
-    who?: string;
-    what?: string;
-    evidenceRequired?: string;
-  }[];
-  learning?: QualityGateSubject["learning"];
-  reviewCandidateFlag?: boolean;
-  financeSnapshot?: {
-    reportedShipFund?: number;
-    recommendedCtm?: number;
-    vesselRequiredApprox?: number;
-    companyLiquidityConfirmed?: boolean;
-    companyLiquidityNote?: string;
-  };
-  override?: CriticalOverrideRecord | null;
-}): QualityGateSubject {
-  const missing = (input.missingInformation ?? []).map((m) => {
-    const text = m.text;
-    const blocks =
-      /liquidity|earth fault|class (?:acceptance|confirmation)|safety|compliance/i.test(
-        text,
-      ) && input.decisionReadiness === "READY";
-    return {
-      text,
-      who: m.who ?? "Case owner",
-      what: m.what ?? text,
-      evidenceRequired: m.evidenceRequired ?? "Confirmation evidence",
-      blocksReadiness: blocks,
-    };
-  });
-
-  return {
-    primaryCaseType: input.primaryCaseType,
-    tags: input.tags ?? [],
-    decisionReadiness: input.decisionReadiness,
-    recommendation: input.recommendation,
-    presidentDecision: input.presidentDecision,
-    why: input.why,
-    decisionAuthorities: input.decisionAuthorities,
-    nextActions: (input.nextActions ?? []).map((a) => ({
-      who: a.owner,
-      what: a.text,
-      dueOrTrigger: a.dueDate,
-    })),
-    confirmedTexts: (input.confirmedFacts ?? []).map((f) => f.text),
-    unverifiedTexts: (input.unverifiedFacts ?? []).map((f) => f.text),
-    assumptionTexts: (input.assumptions ?? []).map((f) => f.text),
-    missing,
-    risks: [],
-    optionsCount: 0,
-    professionalBoundaryIssues: [],
-    learning: input.learning ?? {
-      managementReviewCandidate: false,
-      internalAuditCandidate: false,
-      knowledgeUpdateCandidate: false,
-    },
-    reviewCandidate: {
-      flag: Boolean(input.reviewCandidateFlag),
-      monitorOnly: false,
-    },
-    finance:
-      input.primaryCaseType === "FINANCE_COMMERCIAL"
-        ? {
-            present: true,
-            separationPreserved: !/necessary and affordable/i.test(
-              `${input.recommendation} ${input.why}`,
-            ),
-            liquidityConfirmed:
-              input.financeSnapshot?.companyLiquidityConfirmed === true,
-            doNotAuthorizePayment: true,
-          }
-        : undefined,
-    financeGateActive:
-      input.primaryCaseType === "FINANCE_COMMERCIAL" ||
-      (input.financeSnapshot != null &&
-        (typeof input.financeSnapshot.reportedShipFund === "number" ||
-          typeof input.financeSnapshot.recommendedCtm === "number" ||
-          typeof input.financeSnapshot.vesselRequiredApprox === "number" ||
-          typeof input.financeSnapshot.companyLiquidityConfirmed ===
-            "boolean" ||
-          Boolean(input.financeSnapshot.companyLiquidityNote?.trim()))),
-    impliesClosure:
-      /treat.*closed|close (?:the )?case/i.test(
-        `${input.recommendation} ${input.presidentDecision}`,
-      ) &&
-      !/do not treat|not treat.*closed|must not close|do not close/i.test(
-        `${input.recommendation} ${input.presidentDecision}`,
-      ),
-    override: input.override ?? null,
-  };
-}
-
-/** Apply enforced readiness + Schema-shaped qualityGate onto a brief-like object. */
-export function toSchemaQualityGate(evaluation: QualityGateEvaluation) {
-  return {
-    passed: evaluation.passed,
-    criticalFailures: evaluation.criticalFailures,
-    warnings: evaluation.warnings,
-    evaluatedAt: evaluation.evaluatedAt,
+    missingClassifications,
   };
 }

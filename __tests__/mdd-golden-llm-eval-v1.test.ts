@@ -12,7 +12,7 @@ import {
   mutantGc04CtmWithoutLiquidity,
 } from "@/lib/mdd/golden/mutants-v1";
 
-function evalHeuristic(id: "GC01" | "GC02" | "GC03" | "GC04") {
+async function evalHeuristic(id: "GC01" | "GC02" | "GC03" | "GC04") {
   const spec = GOLDEN_CASE_SPECS.find((s) => s.id === id)!;
   const proposal = proposeFromHeuristics({
     title: spec.title,
@@ -25,13 +25,13 @@ function evalHeuristic(id: "GC01" | "GC02" | "GC03" | "GC04") {
     reviewCandidateFlag: id === "GC03",
     financeSnapshot: spec.financeSnapshot,
   });
-  return runGoldenLlmEvalPipeline(spec, structured);
+  return await runGoldenLlmEvalPipeline(spec, structured);
 }
 
 describe("Golden Case LLM Evaluation Rules v1.0 — reference heuristic", () => {
   for (const id of ["GC01", "GC02", "GC03", "GC04"] as const) {
-    it(`${id} passes pipeline (Pass or PassWithWarnings)`, () => {
-      const report = evalHeuristic(id);
+    it(`${id} passes pipeline (Pass or PassWithWarnings)`, async () => {
+      const report = await evalHeuristic(id);
       expect(report.schemaValid).toBe(true);
       expect(report.qualityGate.passed).toBe(true);
       expect(["Pass", "PassWithWarnings"]).toContain(report.overall);
@@ -40,9 +40,9 @@ describe("Golden Case LLM Evaluation Rules v1.0 — reference heuristic", () => 
 });
 
 describe("Golden Case LLM Evaluation Rules v1.0 — plausible mutants", () => {
-  it("GC01: President visa/document chasing → CriticalFail", () => {
+  it("GC01: President visa/document chasing → CriticalFail", async () => {
     const spec = GOLDEN_CASE_SPECS.find((s) => s.id === "GC01")!;
-    const report = runGoldenLlmEvalPipeline(
+    const report = await runGoldenLlmEvalPipeline(
       spec,
       mutantGc01PresidentVisaChase(),
     );
@@ -50,9 +50,9 @@ describe("Golden Case LLM Evaluation Rules v1.0 — plausible mutants", () => {
     expect(report.criticalFailCodes).toContain("CF_WRONG_AUTHORITY");
   });
 
-  it("GC02: President substitutes for technical/Class judgment → CriticalFail", () => {
+  it("GC02: President substitutes for technical/Class judgment → CriticalFail", async () => {
     const spec = GOLDEN_CASE_SPECS.find((s) => s.id === "GC02")!;
-    const report = runGoldenLlmEvalPipeline(
+    const report = await runGoldenLlmEvalPipeline(
       spec,
       mutantGc02PresidentClassJudgment(),
     );
@@ -64,9 +64,9 @@ describe("Golden Case LLM Evaluation Rules v1.0 — plausible mutants", () => {
     ).toBe(true);
   });
 
-  it("GC03: closed merely because photos/corrections → CriticalFail", () => {
+  it("GC03: closed merely because photos/corrections → CriticalFail", async () => {
     const spec = GOLDEN_CASE_SPECS.find((s) => s.id === "GC03")!;
-    const report = runGoldenLlmEvalPipeline(spec, mutantGc03CloseOnPhotos());
+    const report = await runGoldenLlmEvalPipeline(spec, mutantGc03CloseOnPhotos());
     expect(report.overall).toBe("CriticalFail");
     expect(
       report.criticalFailCodes.some((c) =>
@@ -94,11 +94,12 @@ describe("Golden Case LLM Evaluation Rules v1.0 — plausible mutants", () => {
     }
   });
 
-  it("GC04: USD40k without liquidity confirmation → CriticalFail", () => {
+  it("GC04: USD40k without liquidity confirmation → CriticalFail", async () => {
     const spec = GOLDEN_CASE_SPECS.find((s) => s.id === "GC04")!;
-    const report = runGoldenLlmEvalPipeline(
+    const report = await runGoldenLlmEvalPipeline(
       spec,
       mutantGc04CtmWithoutLiquidity(),
+      { applyDecisionControl: false },
     );
     expect(report.overall).toBe("CriticalFail");
     expect(
@@ -113,18 +114,19 @@ describe("Golden Case LLM Evaluation Rules v1.0 — plausible mutants", () => {
     expect(report.qualityGate.enforcedReadiness).not.toBe("READY");
   });
 
-  it("Golden PASS cannot override unresolved Critical Gate", () => {
+  it("Golden PASS cannot override unresolved Critical Gate", async () => {
     const spec = GOLDEN_CASE_SPECS.find((s) => s.id === "GC04")!;
-    const report = runGoldenLlmEvalPipeline(
+    const report = await runGoldenLlmEvalPipeline(
       spec,
       mutantGc04CtmWithoutLiquidity(),
+      { applyDecisionControl: false },
     );
     expect(report.qualityGate.passed).toBe(false);
     expect(report.overall).not.toBe("Pass");
     expect(report.overall).not.toBe("PassWithWarnings");
   });
 
-  it("optional tag absence alone does not fail GC01", () => {
+  it("optional tag absence alone does not fail GC01", async () => {
     const spec = GOLDEN_CASE_SPECS.find((s) => s.id === "GC01")!;
     const proposal = proposeFromHeuristics({
       title: spec.title,
@@ -136,7 +138,7 @@ describe("Golden Case LLM Evaluation Rules v1.0 — plausible mutants", () => {
       reviewCandidateFlag: false,
     });
     structured.tags = ["pluto_leader", "crew_change"];
-    const report = runGoldenLlmEvalPipeline(spec, structured);
+    const report = await runGoldenLlmEvalPipeline(spec, structured);
     expect(["Pass", "PassWithWarnings"]).toContain(report.overall);
   });
 });

@@ -183,23 +183,14 @@ const managementLearningSchema = z.object({
   notes: z.string().optional(),
 });
 
-const moneyViewSchema = z
-  .object({
-    amount: z.number().optional(),
-    currency: z.string().default("USD"),
-    label: z.string().min(1),
-    asOf: z.string().optional(),
-    origin: moneyOriginSchema.optional(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.amount !== undefined && val.origin === undefined) {
-      ctx.addIssue({
-        code: "custom",
-        message: "MoneyView.origin is required when amount is present",
-        path: ["origin"],
-      });
-    }
-  });
+/** Structural MoneyView (Pre-Control). Origin-when-amount is Canonical-only. */
+const moneyViewSchema = z.object({
+  amount: z.number().optional(),
+  currency: z.string().default("USD"),
+  label: z.string().min(1),
+  asOf: z.string().optional(),
+  origin: moneyOriginSchema.optional(),
+});
 
 const feasibilityViewSchema = z.object({
   liquidityConfirmed: z.boolean(),
@@ -279,24 +270,28 @@ const CRITICAL_CODES = new Set([
   "FACT_RECOMMENDATION_CONTRADICTION",
 ]);
 
-export const mddStructuredOutputSchema = z
-  .object({
-    schemaVersion: z.literal(MDD_STRUCTURED_OUTPUT_SCHEMA_VERSION),
-    primaryCaseType: caseTypeSchema,
-    tags: z.array(z.string()),
-    executive: executiveDecisionSchema,
-    facts: factBundleSchema,
-    risks: z.array(z.string()),
-    options: z.array(optionItemSchema),
-    professionalBoundaries: z.array(professionalBoundaryItemSchema),
-    qualityGate: qualityGateSchema,
-    reviewCandidate: reviewCandidateSchema,
-    learning: managementLearningSchema,
-    finance: financeExtensionSchema.optional(),
-    inspectionIsm: inspectionIsmExtensionSchema.optional(),
-    debug: debugExtensionSchema.optional(),
-  })
-  .superRefine((data, ctx) => {
+export const mddStructuredOutputObjectSchema = z.object({
+  schemaVersion: z.literal(MDD_STRUCTURED_OUTPUT_SCHEMA_VERSION),
+  primaryCaseType: caseTypeSchema,
+  tags: z.array(z.string()),
+  executive: executiveDecisionSchema,
+  facts: factBundleSchema,
+  risks: z.array(z.string()),
+  options: z.array(optionItemSchema),
+  professionalBoundaries: z.array(professionalBoundaryItemSchema),
+  qualityGate: qualityGateSchema,
+  reviewCandidate: reviewCandidateSchema,
+  learning: managementLearningSchema,
+  finance: financeExtensionSchema.optional(),
+  inspectionIsm: inspectionIsmExtensionSchema.optional(),
+  debug: debugExtensionSchema.optional(),
+});
+
+/**
+ * Canonical Structured Output Schema v1.0 (frozen contract) — includes cross-field superRefine.
+ */
+export const mddStructuredOutputSchema = mddStructuredOutputObjectSchema.superRefine(
+  (data, ctx) => {
     const criticalCount = data.qualityGate.criticalFailures.length;
     const passedExpected = criticalCount === 0;
 
@@ -346,6 +341,18 @@ export const mddStructuredOutputSchema = z
           path: ["finance", "doNotAuthorizePayment"],
         });
       }
+
+      const moneyViews: Array<{ amount?: number; origin?: string } | undefined> =
+        [data.finance.vesselOperationalRequirement];
+      for (const [i, mv] of moneyViews.entries()) {
+        if (mv && mv.amount !== undefined && mv.origin === undefined) {
+          ctx.addIssue({
+            code: "custom",
+            message: "MoneyView.origin is required when amount is present",
+            path: ["finance", "vesselOperationalRequirement", "origin"],
+          });
+        }
+      }
     }
 
     if (
@@ -360,7 +367,8 @@ export const mddStructuredOutputSchema = z
         path: ["reviewCandidate", "flag"],
       });
     }
-  });
+  },
+);
 
 export type MddStructuredOutput = z.infer<typeof mddStructuredOutputSchema>;
 
@@ -368,7 +376,16 @@ export type ParseMddStructuredOutputResult =
   | { success: true; data: MddStructuredOutput }
   | { success: false; error: z.ZodError };
 
-/** Validate unknown JSON against Schema v1.0. */
+/** Pre-Control structural validation only (no cross-field policy superRefine). */
+export function parseMddStructuredOutputStructural(
+  input: unknown,
+): ParseMddStructuredOutputResult {
+  const result = mddStructuredOutputObjectSchema.safeParse(input);
+  if (result.success) return { success: true, data: result.data };
+  return { success: false, error: result.error };
+}
+
+/** Canonical Schema v1.0 validation (shape + cross-field policy). */
 export function parseMddStructuredOutput(
   input: unknown,
 ): ParseMddStructuredOutputResult {

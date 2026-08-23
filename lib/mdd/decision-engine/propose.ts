@@ -10,9 +10,9 @@ import type {
   QualityGateResult,
 } from "../types";
 import {
-  evaluateQualityGateV1,
+  evaluateQualityGateV1_1,
   subjectFromProposal,
-} from "../quality-gate/evaluate-v1";
+} from "../quality-gate/evaluate-v1.1";
 
 function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -660,7 +660,7 @@ export function runQualityGate(input: {
   reviewCandidateFlag?: boolean;
 }): QualityGateResult {
   const b = input.brief;
-  const evaluation = evaluateQualityGateV1(
+  const evaluation = evaluateQualityGateV1_1(
     subjectFromProposal({
       primaryCaseType: input.primaryCaseType,
       tags: input.tags,
@@ -709,7 +709,7 @@ export function applyGateToBrief(
     financeSnapshot?: MddCase["financeSnapshot"];
   },
 ): DecisionBrief {
-  const evaluation = evaluateQualityGateV1(
+  const evaluation = evaluateQualityGateV1_1(
     subjectFromProposal({
       primaryCaseType: proposal.primaryCaseType,
       tags: proposal.tags,

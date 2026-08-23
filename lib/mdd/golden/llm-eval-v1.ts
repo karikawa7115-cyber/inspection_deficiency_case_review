@@ -1,19 +1,37 @@
 /**
  * Golden Case LLM Evaluation Rules v1.0.
  * Human SSoT: docs/mdd/GOLDEN_CASE_LLM_EVALUATION_RULES_v1.0.md (frozen).
- * Pipeline: Schema → Quality Gate → enforced Readiness → Golden eval.
- * Does not connect production LLM.
+ * Pipeline v0.1.2 (+ additive Semantic Refill v0.3 when flagged):
+ * Pre-Control Structural → (optional Control) → (optional Semantic Refill) →
+ * Quality Gate v1.1 → Enforced Readiness → Canonical Assembly → Canonical Schema → Golden eval.
+ * Does not connect production LLM unless Semantic Refill live propose is opted in.
  */
 import type { AnalyzeProposal, DecisionReadiness } from "../types";
 import {
   parseMddStructuredOutput,
+  parseMddStructuredOutputStructural,
   type MddStructuredOutput,
 } from "../schema/structured-output-v1";
 import {
-  evaluateQualityGateV1,
+  evaluateQualityGateV1_1,
   subjectFromStructuredOutput,
   type QualityGateEvaluation,
-} from "../quality-gate/evaluate-v1";
+} from "../quality-gate/evaluate-v1.1";
+import { resolveFinanceGateActivation } from "../quality-gate/finance-activation-v1.1";
+import { assembleCanonicalOutputV012 } from "../pipeline/assemble-canonical-v0.1.2";
+import type { CaseEnvelope } from "../case-envelope/current-decision-question";
+import {
+  applyDecisionControlV01,
+  isDecisionControlV01Enabled,
+} from "../decision-control";
+import {
+  isSemanticRefillV03Enabled,
+  resolveSemanticRefillModel,
+  runSemanticRefillStage,
+  type SemanticRefillAudit,
+} from "../semantic-refill";
+import type { LlmProviderConfig } from "../llm/propose-structured-v1";
+import { getGoldenCaseCdq } from "./cdq-envelopes";
 import type { GoldenCaseSpec } from "./specs";
 
 export type DimensionSeverity = "pass" | "warning" | "fail" | "critical_fail";
@@ -56,6 +74,30 @@ export type GoldenLlmEvalReport = {
   };
   schemaValid: boolean;
   notes?: string;
+  /** LLM semantic draft retained for audit (includes draft qualityGate). */
+  originalLlmDraft?: MddStructuredOutput;
+  /** Post-Control / pre-assembly draft (Control staging; may still carry LLM qualityGate). */
+  preAssemblyDraft?: MddStructuredOutput;
+  /** Gate-assembled output that was Canonical-validated (when schemaValid). */
+  assembledOutput?: MddStructuredOutput;
+  /** Present when Decision Control v0.1 ran (feature flag / explicit opt-in). */
+  decisionControl?: {
+    applied: boolean;
+    controlVersion: string;
+    needsSemanticFill: boolean;
+    findings: { code: string; message: string }[];
+    audit: {
+      ruleId: string;
+      fieldPath: string;
+      reason: string;
+      at: string;
+    }[];
+    auditCount: number;
+    originalLlmDraft: MddStructuredOutput;
+    controlled: MddStructuredOutput;
+  };
+  /** Present when Semantic Refill v0.3 stage ran (accepted or rejected). */
+  semanticRefill?: SemanticRefillAudit;
 };
 
 function includesAny(hay: string, needles: string[]) {
@@ -511,18 +553,50 @@ export function evaluateGoldenDimensions(
   };
 }
 
-/** Full pipeline: Schema → Gate → enforce readiness → Golden eval. */
-export function runGoldenLlmEvalPipeline(
+/**
+ * Full pipeline v0.1.2 (+ optional Semantic Refill v0.3):
+ * Structural → (optional Control) → (optional Refill) → Gate v1.1 → Enforced Readiness →
+ * Canonical Assembly → Canonical Schema v1.0 → Golden eval.
+ */
+export async function runGoldenLlmEvalPipeline(
   spec: GoldenCaseSpec,
   candidate: unknown,
-): GoldenLlmEvalReport {
-  const parsed = parseMddStructuredOutput(candidate);
-  if (!parsed.success) {
+  opts?: {
+    /** Case envelope including CDQ. When control runs and CDQ omitted, loads Golden CDQ. */
+    envelope?: CaseEnvelope;
+    applyDecisionControl?: boolean;
+    nowIso?: string;
+    financeSourceInput?: import("../quality-gate/finance-activation-v1.1").FinanceSourceInput | null;
+    /** Override Semantic Refill flag; default env MDD_SEMANTIC_REFILL_V03. */
+    applySemanticRefill?: boolean;
+    /** Injected refill text for deterministic tests (skips LLM). */
+    semanticRefillProposedText?: string;
+    /** Live refill LLM config when flag on and no injected text. */
+    semanticRefillLlmConfig?: LlmProviderConfig | null;
+    semanticRefillModel?: string;
+  },
+): Promise<GoldenLlmEvalReport> {
+  const envelope: CaseEnvelope = opts?.envelope ?? {
+    title: spec.title,
+    vessel: spec.vessel,
+    pastedText: spec.inputFactsText,
+    currentDecisionQuestion: getGoldenCaseCdq(spec.id),
+  };
+  const financeSourceInput =
+    opts?.financeSourceInput ?? spec.financeSnapshot ?? null;
+
+  const structural = parseMddStructuredOutputStructural(candidate);
+  if (!structural.success) {
     return {
       goldenId: spec.id,
       overall: "CriticalFail",
       dimensions: [
-        dim("D00", "Schema validation", "critical_fail", "Schema v1.0 invalid"),
+        dim(
+          "D00",
+          "Schema validation",
+          "critical_fail",
+          "Pre-Control structural validation failed",
+        ),
       ],
       criticalFailCodes: ["CF_SCHEMA_INVALID"],
       qualityGate: {
@@ -532,39 +606,123 @@ export function runGoldenLlmEvalPipeline(
         enforcedReadiness: "NOT_READY",
       },
       schemaValid: false,
-      notes: "Failed before Quality Gate / Golden dimensions",
+      notes: "Failed Pre-Control structural validation",
     };
   }
 
-  let output = parsed.data;
-  const gate = evaluateQualityGateV1(subjectFromStructuredOutput(output));
+  const originalLlmDraft = structuredClone(structural.data);
+  let draft = structural.data;
+  let decisionControl: GoldenLlmEvalReport["decisionControl"];
+  let semanticRefill: GoldenLlmEvalReport["semanticRefill"];
 
-  // Enforce readiness on copy
-  if (output.executive.decisionReadiness !== gate.enforcedReadiness) {
-    output = {
-      ...output,
-      executive: {
-        ...output.executive,
-        decisionReadiness: gate.enforcedReadiness,
-      },
+  const shouldControl =
+    opts?.applyDecisionControl === true ||
+    (opts?.applyDecisionControl !== false && isDecisionControlV01Enabled());
+
+  if (shouldControl) {
+    const ctrl = applyDecisionControlV01({
+      envelope,
+      llmDraft: draft,
+      nowIso: opts?.nowIso,
+      financeSourceInput,
+    });
+    draft = ctrl.controlled;
+    decisionControl = {
+      applied: ctrl.applied,
+      controlVersion: ctrl.controlVersion,
+      needsSemanticFill: ctrl.needsSemanticFill,
+      findings: ctrl.findings,
+      audit: ctrl.audit.map((a) => ({
+        ruleId: a.ruleId,
+        fieldPath: a.fieldPath,
+        reason: a.reason,
+        at: a.at,
+      })),
+      auditCount: ctrl.audit.length,
+      originalLlmDraft: ctrl.originalLlmDraft,
+      controlled: ctrl.controlled,
+    };
+
+    const refillEnabled =
+      opts?.applySemanticRefill === true ||
+      (opts?.applySemanticRefill !== false && isSemanticRefillV03Enabled());
+
+    if (refillEnabled && ctrl.needsSemanticFill) {
+      const refillModel =
+        opts?.semanticRefillModel ??
+        opts?.semanticRefillLlmConfig?.model ??
+        resolveSemanticRefillModel();
+      const refill = await runSemanticRefillStage({
+        envelope,
+        controlled: draft,
+        findings: ctrl.findings,
+        needsSemanticFill: ctrl.needsSemanticFill,
+        proposedText: opts?.semanticRefillProposedText,
+        model: refillModel,
+        nowIso: opts?.nowIso,
+        enabled: true,
+        llmConfig:
+          opts?.semanticRefillProposedText != null
+            ? null
+            : (opts?.semanticRefillLlmConfig ?? null),
+      });
+      if (refill) {
+        draft = refill.controlled;
+        semanticRefill = refill.audit;
+        decisionControl = {
+          ...decisionControl,
+          needsSemanticFill: refill.needsSemanticFill,
+          findings: refill.findings,
+          controlled: refill.controlled,
+        };
+      }
+    }
+  }
+
+  const preAssemblyDraft = draft;
+
+  const financeAct = resolveFinanceGateActivation({
+    primaryCaseType: draft.primaryCaseType,
+    currentDecisionQuestion: envelope.currentDecisionQuestion,
+    financeSourceInput,
+    llmFinanceExtensionPresent: Boolean(draft.finance),
+  });
+
+  const gate = evaluateQualityGateV1_1(
+    subjectFromStructuredOutput(draft, {
+      financeGateActive: financeAct.active,
+    }),
+  );
+
+  const assembled = assembleCanonicalOutputV012(draft, gate);
+
+  const canonical = parseMddStructuredOutput(assembled);
+  if (!canonical.success) {
+    return {
+      goldenId: spec.id,
+      overall: "CriticalFail",
+      dimensions: [
+        dim("D00", "Schema validation", "critical_fail", "Schema v1.0 invalid"),
+      ],
+      criticalFailCodes: ["CF_SCHEMA_INVALID"],
       qualityGate: {
         passed: gate.passed,
         criticalFailures: gate.criticalFailures,
         warnings: gate.warnings,
-        evaluatedAt: gate.evaluatedAt,
+        enforcedReadiness: gate.enforcedReadiness,
       },
-    };
-  } else {
-    output = {
-      ...output,
-      qualityGate: {
-        passed: gate.passed,
-        criticalFailures: gate.criticalFailures,
-        warnings: gate.warnings,
-        evaluatedAt: gate.evaluatedAt,
-      },
+      schemaValid: false,
+      notes:
+        "Failed Canonical Schema v1.0 after Gate-owned Canonical Output Assembly",
+      originalLlmDraft: decisionControl?.originalLlmDraft ?? originalLlmDraft,
+      preAssemblyDraft,
+      assembledOutput: assembled,
+      decisionControl,
+      semanticRefill,
     };
   }
+
+  const output = canonical.data;
 
   const { dimensions, criticalFailCodes } = evaluateGoldenDimensions(
     spec,
@@ -572,11 +730,14 @@ export function runGoldenLlmEvalPipeline(
     gate,
   );
 
-  // If candidate originally claimed READY with gate criticals, keep that Critical Fail code
-  const originalReadyIllegal =
-    parsed.data.executive.decisionReadiness === "READY" && !gate.passed;
+  const sourceForReadyCheck =
+    decisionControl?.originalLlmDraft ?? originalLlmDraft;
   const codes = [...criticalFailCodes];
-  if (originalReadyIllegal && !codes.includes("CF_READY_WITH_CRITICAL_GATE")) {
+  if (
+    sourceForReadyCheck.executive.decisionReadiness === "READY" &&
+    !gate.passed &&
+    !codes.includes("CF_READY_WITH_CRITICAL_GATE")
+  ) {
     codes.push("CF_READY_WITH_CRITICAL_GATE");
   }
 
@@ -594,6 +755,11 @@ export function runGoldenLlmEvalPipeline(
       enforcedReadiness: gate.enforcedReadiness,
     },
     schemaValid: true,
+    originalLlmDraft: decisionControl?.originalLlmDraft ?? originalLlmDraft,
+    preAssemblyDraft,
+    assembledOutput: assembled,
+    decisionControl,
+    semanticRefill,
   };
 }
 

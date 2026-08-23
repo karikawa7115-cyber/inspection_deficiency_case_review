@@ -1,8 +1,16 @@
 /**
  * Phase 1 production LLM connection — Structured Output Schema v1.0.
  * System prompt: MDD_SYSTEM_PROMPT_V1 (frozen). Does not alter Golden Spec.
+ * Provider-enforced Structured Outputs (strict JSON Schema); Zod remains final validation.
  */
+import type { CurrentDecisionQuestion } from "../case-envelope/current-decision-question";
+import { injectQualityGateEvaluatedAt } from "../quality-gate/evaluated-at";
 import { MDD_SYSTEM_PROMPT_V1 } from "../prompts/system-prompt-v1";
+import { normalizeMddStructuredOutputV1 } from "./normalize-structured-v1";
+import {
+  getMddOpenAiStrictJsonSchema,
+  MDD_OPENAI_STRUCTURED_OUTPUT_NAME,
+} from "./openai-strict-json-schema-v1";
 
 export type LlmProviderConfig = {
   apiKey: string;
@@ -14,6 +22,8 @@ export type LlmCaseInput = {
   title: string;
   vessel?: string;
   pastedText: string;
+  /** First-class Case Envelope CDQ — passed to the model; not inferred from narrative. */
+  currentDecisionQuestion?: CurrentDecisionQuestion | null;
   /** Source/input finance figures only — not expected decisions. */
   financeSourceInput?: {
     reportedShipFund?: number;
@@ -35,49 +45,18 @@ export type LlmStructuredCallResult = {
   provider: string;
   model: string;
   baseUrl: string;
-  rawContent: string;
+  /** Exact JSON parsed from the provider response (before local normalization). */
+  providerRawJson: unknown;
+  /** Representation-normalized JSON for Zod / Gate / Golden pipeline. */
   rawJson: unknown;
+  rawContent: string;
+  normalizationRepairs: string[];
+  responseFormat: "json_schema_strict";
   latencyMs: number;
+  refusal?: string;
 };
 
-const SCHEMA_OUTPUT_CONTRACT = `OUTPUT CONTRACT — MDD Structured Output Schema v1.0 (mandatory)
-Return ONE JSON object only (no markdown fences, no commentary).
-Top-level keys:
-- schemaVersion: must be exactly "1.0"
-- primaryCaseType: one of OPERATIONAL | TECHNICAL | CREW_MANNING | FINANCE_COMMERCIAL | INSPECTION_COMPLIANCE | ISM_MANAGEMENT
-- tags: string array (may be empty of optional tags; include material tags)
-- executive: {
-    recommendation: { text },
-    presidentDecision: { text, requiredNow: boolean },
-    decisionReadiness: READY | CONDITIONAL | NOT_READY,
-    decisionAuthorities: [{ id, roleLabel, authority, status }] where authority is one of
-      President/DP | Superintendent | Master | Owner | Manning Agent | Class | Flag Administration | Finance/Accounting | External Authority | Other
-      and status is pending | confirmed | not_required; at least one authority
-    why: { text },
-    nextActions: [{ id, who, what, dueOrTrigger?, status: open|done }]
-  }
-- facts: {
-    confirmed: [{ id, text }],
-    unverified: [{ id, text }],
-    assumptions: [{ id, text, hypothesis? }],
-    missingInformation: [{ id, text, who, what, evidenceRequired, blocksReadiness? }]
-  }
-- risks: string[] (may be [])
-- options: [{ id, title, summary }] (may be []; do not invent artificial options)
-- professionalBoundaries: [{ id, domain, issue, responsibleAuthority, ... }] (may be [])
-- qualityGate: { passed: boolean, criticalFailures: [], warnings: [], evaluatedAt: ISO-8601 }
-  (You may leave criticalFailures/warnings empty; the server re-evaluates Quality Gate.)
-- reviewCandidate: { flag: boolean, retainAfterClose: boolean, reason?, monitorOnly? }
-- learning: {
-    correctiveAction, preventiveAction, effectivenessVerification, horizontalCheck: boolean,
-    fleetWideRelevance: yes|possible|no,
-    internalAuditCandidate, managementReviewCandidate, knowledgeUpdateCandidate: boolean,
-    notes?
-  }
-- finance?: optional; only when finance judgment is material. Use sourceFacts vs derivedValues.
-  Money amounts with origin "source"|"derived". separationPreserved and doNotAuthorizePayment must be true when finance present.
-- inspectionIsm?: optional; when inspection/ISM depth applies.
-- debug?: optional non-canonical.
+const CASE_USER_INSTRUCTION = `Produce one MDD Structured Output object for this case from the facts alone.
 
 Rules:
 - Analyze ONLY from the provided case input facts.
@@ -85,7 +64,12 @@ Rules:
 - Do NOT redefine System Prompt priorities.
 - Empty risks/options/professionalBoundaries are allowed — do not invent filler.
 - If managementReviewCandidate is true, reviewCandidate.flag should normally be true (monitorOnly may keep flag false).
-- READY is invalid if critical material issues remain.`;
+- READY is invalid if critical material issues remain.
+- When finance judgment is material, include the finance extension with separationPreserved=true and doNotAuthorizePayment=true.
+- qualityGate.criticalFailures and warnings must be arrays of { code, message } objects (may be empty; server re-evaluates Quality Gate).
+- qualityGate.evaluatedAt may be any placeholder string; the application overwrites it as system metadata (do not invent meaningful runtime timestamps).
+- Use Decision Authority enum values exactly (e.g. President/DP, not President).
+- Optional fields: use null when absent (provider schema); do not invent missing authorities or finance.`;
 
 export function resolveLlmConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
@@ -109,14 +93,20 @@ export async function callLlmForStructuredOutput(
   const started = Date.now();
   const userPayload = {
     instruction:
-      "Produce MddStructuredOutput JSON for this case from the facts alone.",
+      "Produce MddStructuredOutput JSON for this case from the facts alone. Use Current Decision Question as the principal decision framing — do not invent a different current decision from narrative alone.",
     caseInput: {
       title: input.title,
       vessel: input.vessel ?? null,
       pastedText: input.pastedText,
       financeSourceInput: input.financeSourceInput ?? null,
+      currentDecisionQuestion: input.currentDecisionQuestion ?? null,
     },
   };
+
+  const schema = getMddOpenAiStrictJsonSchema();
+
+  // gpt-5* / some reasoning models reject non-default temperature; omit so API uses default.
+  const supportsCustomTemperature = !/^gpt-5/i.test(config.model);
 
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
@@ -126,8 +116,15 @@ export async function callLlmForStructuredOutput(
     },
     body: JSON.stringify({
       model: config.model,
-      temperature: 0.1,
-      response_format: { type: "json_object" },
+      ...(supportsCustomTemperature ? { temperature: 0.1 } : {}),
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: MDD_OPENAI_STRUCTURED_OUTPUT_NAME,
+          strict: true,
+          schema,
+        },
+      },
       messages: [
         {
           role: "system",
@@ -135,7 +132,7 @@ export async function callLlmForStructuredOutput(
         },
         {
           role: "user",
-          content: `${SCHEMA_OUTPUT_CONTRACT}\n\nCASE INPUT JSON:\n${JSON.stringify(userPayload, null, 2)}`,
+          content: `${CASE_USER_INSTRUCTION}\n\nCASE INPUT JSON:\n${JSON.stringify(userPayload, null, 2)}`,
         },
       ],
     }),
@@ -144,24 +141,35 @@ export async function callLlmForStructuredOutput(
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
     throw new Error(
-      `LLM HTTP ${res.status}: ${errText.slice(0, 500) || res.statusText}`,
+      `LLM HTTP ${res.status}: ${errText.slice(0, 800) || res.statusText}`,
     );
   }
 
   const payload = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: {
+      message?: { content?: string | null; refusal?: string | null };
+    }[];
   };
-  const rawContent = payload.choices?.[0]?.message?.content;
+  const message = payload.choices?.[0]?.message;
+  if (message?.refusal) {
+    throw new Error(`LLM refusal: ${message.refusal}`);
+  }
+  const rawContent = message?.content;
   if (!rawContent) {
     throw new Error("LLM returned empty content");
   }
 
-  let rawJson: unknown;
+  let providerRawJson: unknown;
   try {
-    rawJson = JSON.parse(rawContent);
+    providerRawJson = JSON.parse(rawContent);
   } catch {
     throw new Error("LLM content was not valid JSON");
   }
+
+  const { normalized, repairs } =
+    normalizeMddStructuredOutputV1(providerRawJson);
+  // Quality Gate Rules v1.1 §10: evaluatedAt is system metadata, not model judgment.
+  const withEvaluatedAt = injectQualityGateEvaluatedAt(normalized);
 
   const provider = config.baseUrl.includes("openai.com")
     ? "openai-compatible"
@@ -171,8 +179,12 @@ export async function callLlmForStructuredOutput(
     provider,
     model: config.model,
     baseUrl: config.baseUrl,
+    providerRawJson,
+    rawJson: withEvaluatedAt,
     rawContent,
-    rawJson,
+    normalizationRepairs: repairs,
+    responseFormat: "json_schema_strict",
     latencyMs: Date.now() - started,
+    refusal: message?.refusal ?? undefined,
   };
 }

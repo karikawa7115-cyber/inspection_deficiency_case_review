@@ -1,7 +1,8 @@
 # MDD Quality Gate Rules v1.0
 
-**Status:** **Frozen** — human-readable SSoT (clarifications of 23 Aug 2026 incorporated).  
-**Machine implementation:** `lib/mdd/quality-gate/evaluate-v1.ts`  
+**Status:** **Frozen (superseded for active evaluation)** — retained for history / regression.  
+**Active Quality Gate:** [QUALITY_GATE_RULES_v1.1.md](./QUALITY_GATE_RULES_v1.1.md) (`evaluateQualityGateV1_1`).  
+**Machine implementation (v1.0):** `lib/mdd/quality-gate/evaluate-v1.ts` (`evaluateQualityGateV1`)  
 **Depends on (frozen):**
 
 - `docs/mdd/SYSTEM_PROMPT_v1.0.md`
@@ -13,7 +14,7 @@
 **Naming note:** Critical codes match Structured Output Schema v1.0 / System Prompt.  
 `SAFETY_OR_COMPLIANCE_UNRESOLVED` is the canonical code (not a shortened alias).
 
-**Versioning:** Changes require `v1.1+` and human approval.
+**Versioning:** Active path is v1.1+. This v1.0 text remains frozen for comparison.
 
 ---
 
