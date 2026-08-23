@@ -88,7 +88,13 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
       const data: AnalyzeResponse = {
         primaryCaseType: proposal.primaryCaseType,
         tags: proposal.tags,
-        brief: applyGateToBrief(proposal),
+        brief: applyGateToBrief(proposal, {
+          reviewCandidateFlag:
+            caseData.goldenCaseId === "GC03"
+              ? true
+              : caseData.reviewCandidateFlag,
+          financeSnapshot: caseData.financeSnapshot,
+        }),
       };
       const reviewFlag =
         caseData.goldenCaseId === "GC03"

@@ -32,8 +32,12 @@ const bodySchema = z.object({
 
 /**
  * Phase 1 analyze endpoint.
- * Default: deterministic heuristic proposer (stable for Golden Lab).
- * Optional LLM when MDD_AI_API_KEY + MDD_AI_BASE_URL are set and mode=llm.
+ * Default: deterministic heuristic proposer (stable for Golden Lab / static export clients).
+ * Optional LLM when MDD_AI_API_KEY or OPENAI_API_KEY is set and mode=llm.
+ * LLM path returns Schema v1.0 structured JSON; callers should run Quality Gate + Golden eval separately.
+ *
+ * Note: with `output: "export"`, this route is not available in static production builds.
+ * Use `scripts/mdd-phase1-llm-golden-run.ts` for Phase 1 live Golden validation.
  */
 export async function POST(req: Request) {
   const json = await req.json().catch(() => null);
@@ -46,99 +50,120 @@ export async function POST(req: Request) {
   }
 
   const data = parsed.data;
-  let proposal = proposeFromHeuristics(data);
 
   if (data.mode === "llm") {
-    const llm = await tryLlmPropose(data);
-    if (llm) proposal = llm;
+    const { resolveLlmConfigFromEnv, callLlmForStructuredOutput } =
+      await import("@/lib/mdd/llm/propose-structured-v1");
+    const { runGoldenLlmEvalPipeline } = await import(
+      "@/lib/mdd/golden/llm-eval-v1"
+    );
+    const config = resolveLlmConfigFromEnv();
+    if (!config) {
+      return NextResponse.json(
+        { error: "LLM not configured (MDD_AI_API_KEY / OPENAI_API_KEY)" },
+        { status: 503 },
+      );
+    }
+    try {
+      const llm = await callLlmForStructuredOutput(
+        {
+          title: data.title,
+          vessel: data.vessel,
+          pastedText: data.pastedText,
+          financeSourceInput: data.financeSnapshot,
+        },
+        config,
+      );
+      const goldenId = data.goldenCaseId;
+      if (goldenId) {
+        const { GOLDEN_CASE_SPECS } = await import("@/lib/mdd/golden/specs");
+        const spec = GOLDEN_CASE_SPECS.find((s) => s.id === goldenId);
+        if (spec) {
+          const report = runGoldenLlmEvalPipeline(spec, llm.rawJson);
+          return NextResponse.json({
+            engine: "llm",
+            model: llm.model,
+            provider: llm.provider,
+            rawStructuredOutput: llm.rawJson,
+            schemaValid: report.schemaValid,
+            qualityGate: report.qualityGate,
+            goldenEvaluation: {
+              overall: report.overall,
+              criticalFailCodes: report.criticalFailCodes,
+              dimensions: report.dimensions,
+            },
+          });
+        }
+      }
+      const { parseMddStructuredOutput } = await import(
+        "@/lib/mdd/schema/structured-output-v1"
+      );
+      const { evaluateQualityGateV1, subjectFromStructuredOutput } =
+        await import("@/lib/mdd/quality-gate/evaluate-v1");
+      const parsedOut = parseMddStructuredOutput(llm.rawJson);
+      if (!parsedOut.success) {
+        return NextResponse.json({
+          engine: "llm",
+          model: llm.model,
+          provider: llm.provider,
+          rawStructuredOutput: llm.rawJson,
+          schemaValid: false,
+          schemaError: parsedOut.error.flatten(),
+        });
+      }
+      const gate = evaluateQualityGateV1(
+        subjectFromStructuredOutput(parsedOut.data),
+      );
+      return NextResponse.json({
+        engine: "llm",
+        model: llm.model,
+        provider: llm.provider,
+        rawStructuredOutput: {
+          ...parsedOut.data,
+          executive: {
+            ...parsedOut.data.executive,
+            decisionReadiness: gate.enforcedReadiness,
+          },
+          qualityGate: {
+            passed: gate.passed,
+            criticalFailures: gate.criticalFailures,
+            warnings: gate.warnings,
+            evaluatedAt: gate.evaluatedAt,
+          },
+        },
+        schemaValid: true,
+        qualityGate: {
+          passed: gate.passed,
+          enforcedReadiness: gate.enforcedReadiness,
+          criticalFailures: gate.criticalFailures,
+          warnings: gate.warnings,
+        },
+      });
+    } catch (e) {
+      return NextResponse.json(
+        {
+          error: e instanceof Error ? e.message : "LLM call failed",
+        },
+        { status: 502 },
+      );
+    }
   }
+
+  let proposal = proposeFromHeuristics(data);
 
   if (!CASE_TYPES.includes(proposal.primaryCaseType)) {
     return NextResponse.json({ error: "Invalid case type from engine" }, { status: 500 });
   }
 
-  const brief = applyGateToBrief(proposal);
+  const brief = applyGateToBrief(proposal, {
+    reviewCandidateFlag:
+      data.goldenCaseId === "GC03" ? true : undefined,
+    financeSnapshot: data.financeSnapshot,
+  });
   return NextResponse.json({
     primaryCaseType: proposal.primaryCaseType,
     tags: proposal.tags,
     brief,
-    engine: data.mode === "llm" ? "llm-or-fallback" : "heuristic",
+    engine: "heuristic",
   });
-}
-
-async function tryLlmPropose(
-  data: z.infer<typeof bodySchema>,
-): Promise<ReturnType<typeof proposeFromHeuristics> | null> {
-  const apiKey = process.env.MDD_AI_API_KEY ?? process.env.OPENAI_API_KEY;
-  const baseUrl =
-    process.env.MDD_AI_BASE_URL ?? "https://api.openai.com/v1";
-  const model = process.env.MDD_AI_MODEL ?? "gpt-4o-mini";
-  if (!apiKey) return null;
-
-  // For Phase 1 reliability, LLM path still seeds from heuristics then asks for refinement JSON.
-  // If the call fails, caller keeps heuristic result.
-  const seed = proposeFromHeuristics(data);
-  try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are MDD Decision Preparation Engine. Propose structured analysis only. AI proposes, human confirms. Never invent safety emergencies. Separate Confirmed/Unverified/Assumption/Missing. Necessary≠Affordable. Do not substitute for Class/Flag/Master/Tech Supt. Return JSON with keys primaryCaseType, tags, recommendation, decisionReadiness, presidentDecision, why.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              title: data.title,
-              vessel: data.vessel,
-              pastedText: data.pastedText,
-              seedType: seed.primaryCaseType,
-            }),
-          },
-        ],
-      }),
-    });
-    if (!res.ok) return null;
-    const payload = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) return null;
-    const refined = JSON.parse(content) as {
-      primaryCaseType?: string;
-      tags?: string[];
-      recommendation?: string;
-      decisionReadiness?: string;
-      presidentDecision?: string;
-      why?: string;
-    };
-    return {
-      ...seed,
-      primaryCaseType:
-        (refined.primaryCaseType as typeof seed.primaryCaseType) ??
-        seed.primaryCaseType,
-      tags: refined.tags ?? seed.tags,
-      brief: {
-        ...seed.brief,
-        recommendation: refined.recommendation ?? seed.brief.recommendation,
-        decisionReadiness:
-          (refined.decisionReadiness as typeof seed.brief.decisionReadiness) ??
-          seed.brief.decisionReadiness,
-        presidentDecision:
-          refined.presidentDecision ?? seed.brief.presidentDecision,
-        why: refined.why ?? seed.brief.why,
-      },
-    };
-  } catch {
-    return null;
-  }
 }

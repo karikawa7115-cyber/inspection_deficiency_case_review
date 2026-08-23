@@ -190,7 +190,8 @@ export function MddCaseList() {
                 <CardTitle className="text-base">Development tools</CardTitle>
                 <CardDescription>
                   Not part of the operational President view. Golden Case
-                  reload replaces the same case id (no duplicates).
+                  reload replaces the same case id; legacy duplicates with the
+                  same GC id are auto-collapsed on load.
                 </CardDescription>
               </div>
               <ChevronDown className="size-4 shrink-0" />

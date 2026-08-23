@@ -12,7 +12,8 @@
     "format:check": "prettier --check .",
     "check:radius": "node scripts/check-radius-drift.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "mdd:llm-golden": "npx --yes tsx --env-file=.env.local scripts/mdd-phase1-llm-golden-run.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

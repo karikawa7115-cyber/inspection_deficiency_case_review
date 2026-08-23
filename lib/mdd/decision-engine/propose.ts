@@ -9,6 +9,10 @@ import type {
   MddCase,
   QualityGateResult,
 } from "../types";
+import {
+  evaluateQualityGateV1,
+  subjectFromProposal,
+} from "../quality-gate/evaluate-v1";
 
 function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
@@ -652,104 +656,106 @@ function baseBrief(
 export function runQualityGate(input: {
   brief: AnalyzeProposal["brief"];
   primaryCaseType: CaseType;
+  tags?: string[];
+  reviewCandidateFlag?: boolean;
 }): QualityGateResult {
-  const criticalFailures: string[] = [];
-  const warnings: string[] = [];
   const b = input.brief;
-
-  const hasConfirmed = b.confirmedFacts.length > 0;
-  const hasMissingCritical =
-    b.decisionReadiness === "READY" &&
-    b.missingInformation.some((m) =>
-      /safety|compliance|authority|class acceptance|liquidity/i.test(m.text),
-    );
-
-  if (!hasConfirmed) {
-    criticalFailures.push("Critical fact missing: no confirmed facts recorded.");
-  }
-
-  if (b.decisionAuthorities.length === 0) {
-    criticalFailures.push("Decision Authority unclear: no authorities assigned.");
-  }
-
-  if (!b.recommendation.trim()) {
-    criticalFailures.push("Recommendation unsupported: empty recommendation.");
-  }
-
-  if (!b.presidentDecision.trim()) {
-    criticalFailures.push("Decision Authority / President Decision unclear.");
-  }
-
-  // Professional boundary heuristics
-  if (
-    input.primaryCaseType === "TECHNICAL" &&
-    /class(?:nk)? has approved everything|definitely applies to all/i.test(
-      `${b.recommendation} ${b.why}`,
-    )
-  ) {
-    criticalFailures.push(
-      "Professional Boundary violation: stating Class acceptance as definite without confirmation.",
-    );
-  }
-
-  if (
-    /president (?:should|must) (?:personally )?(?:inspect|chase every visa|manage every document)/i.test(
-      `${b.recommendation} ${b.delegation.map((d) => d.task).join(" ")}`,
-    )
-  ) {
-    criticalFailures.push(
-      "Professional Boundary / Delegation failure: routine or technical work returned to President.",
-    );
-  }
-
-  if (b.decisionReadiness === "READY" && criticalFailures.length > 0) {
-    // force not ready handled by caller
-  }
-
-  if (hasMissingCritical) {
-    warnings.push("READY requested while safety/compliance/liquidity-related missing info remains.");
-  }
-
-  if (b.delegation.length === 0) {
-    warnings.push("Delegation plan is empty.");
-  }
-
-  const necessaryAffordableCollapsed =
-    input.primaryCaseType === "FINANCE_COMMERCIAL" &&
-    /necessary and affordable|affordable because necessary/i.test(
-      `${b.recommendation} ${b.why}`,
-    );
-  if (necessaryAffordableCollapsed) {
-    criticalFailures.push(
-      "Necessary and Affordable not separated in finance recommendation.",
-    );
-  }
+  const evaluation = evaluateQualityGateV1(
+    subjectFromProposal({
+      primaryCaseType: input.primaryCaseType,
+      tags: input.tags,
+      recommendation: b.recommendation,
+      presidentDecision: b.presidentDecision,
+      why: b.why,
+      decisionReadiness: b.decisionReadiness,
+      decisionAuthorities: b.decisionAuthorities.map((a) => ({
+        roleLabel: a.roleLabel,
+        authority: String(a.authority),
+      })),
+      nextActions: b.nextActions.map((a) => ({
+        owner: a.owner,
+        text: a.text,
+        dueDate: a.dueDate,
+      })),
+      confirmedFacts: b.confirmedFacts,
+      unverifiedFacts: b.unverifiedFacts,
+      assumptions: b.assumptions,
+      missingInformation: b.missingInformation,
+      learning: {
+        managementReviewCandidate: b.learning.managementReviewCandidate,
+        internalAuditCandidate: b.learning.internalAuditCandidate,
+        knowledgeUpdateCandidate: b.learning.knowledgeUpdateCandidate,
+        notes: b.learning.notes,
+      },
+      reviewCandidateFlag:
+        input.reviewCandidateFlag ?? b.learning.managementReviewCandidate,
+    }),
+  );
 
   return {
-    criticalFailures,
-    warnings,
-    passed: criticalFailures.length === 0,
-    evaluatedAt: new Date().toISOString(),
+    passed: evaluation.passed,
+    criticalFailures: evaluation.criticalFailures.map(
+      (f) => `${f.code}: ${f.message}`,
+    ),
+    warnings: evaluation.warnings.map((f) => `${f.code}: ${f.message}`),
+    evaluatedAt: evaluation.evaluatedAt,
   };
 }
 
 export function applyGateToBrief(
   proposal: AnalyzeProposal,
+  opts?: {
+    reviewCandidateFlag?: boolean;
+    financeSnapshot?: MddCase["financeSnapshot"];
+  },
 ): DecisionBrief {
-  const gate = runQualityGate({
-    brief: proposal.brief,
-    primaryCaseType: proposal.primaryCaseType,
-  });
-
-  let readiness = proposal.brief.decisionReadiness;
-  if (!gate.passed && readiness === "READY") {
-    readiness = "NOT_READY";
-  }
+  const evaluation = evaluateQualityGateV1(
+    subjectFromProposal({
+      primaryCaseType: proposal.primaryCaseType,
+      tags: proposal.tags,
+      recommendation: proposal.brief.recommendation,
+      presidentDecision: proposal.brief.presidentDecision,
+      why: proposal.brief.why,
+      decisionReadiness: proposal.brief.decisionReadiness,
+      decisionAuthorities: proposal.brief.decisionAuthorities.map((a) => ({
+        roleLabel: a.roleLabel,
+        authority: String(a.authority),
+      })),
+      nextActions: proposal.brief.nextActions.map((a) => ({
+        owner: a.owner,
+        text: a.text,
+        dueDate: a.dueDate,
+      })),
+      confirmedFacts: proposal.brief.confirmedFacts,
+      unverifiedFacts: proposal.brief.unverifiedFacts,
+      assumptions: proposal.brief.assumptions,
+      missingInformation: proposal.brief.missingInformation,
+      learning: {
+        managementReviewCandidate:
+          proposal.brief.learning.managementReviewCandidate,
+        internalAuditCandidate: proposal.brief.learning.internalAuditCandidate,
+        knowledgeUpdateCandidate:
+          proposal.brief.learning.knowledgeUpdateCandidate,
+        notes: proposal.brief.learning.notes,
+      },
+      reviewCandidateFlag:
+        opts?.reviewCandidateFlag ??
+        proposal.brief.learning.managementReviewCandidate,
+      financeSnapshot: opts?.financeSnapshot,
+    }),
+  );
 
   return {
     ...proposal.brief,
-    decisionReadiness: readiness,
-    qualityGate: gate,
+    decisionReadiness: evaluation.enforcedReadiness,
+    qualityGate: {
+      passed: evaluation.passed,
+      criticalFailures: evaluation.criticalFailures.map(
+        (f) => `${f.code}: ${f.message}`,
+      ),
+      warnings: evaluation.warnings.map((f) => `${f.code}: ${f.message}`),
+      evaluatedAt: evaluation.evaluatedAt,
+    },
     generatedAt: new Date().toISOString(),
   };
 }
