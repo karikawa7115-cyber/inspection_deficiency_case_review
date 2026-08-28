@@ -690,10 +690,10 @@ function HumanConfirmationPanel({
                 id="tags-edit"
                 className="bg-card"
                 value={caseData.tags.join(", ")}
-                onValueChange={(value) =>
+                onChange={(e) =>
                   onChange({
                     ...caseData,
-                    tags: value
+                    tags: e.target.value
                       .split(",")
                       .map((t) => t.trim())
                       .filter(Boolean),
@@ -702,7 +702,7 @@ function HumanConfirmationPanel({
                 onBlur={(e) =>
                   onPersist({
                     ...caseData,
-                    tags: (e.target as HTMLInputElement).value
+                    tags: e.target.value
                       .split(",")
                       .map((t) => t.trim())
                       .filter(Boolean),
