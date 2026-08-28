@@ -23,12 +23,14 @@ import {
   ReadinessBadge,
   ReviewCandidateBadge,
 } from "@/components/mdd/MddStatusBadges";
+import { MddIntakeAttachments } from "@/components/mdd/MddIntakeAttachments";
 import { localCaseRepository } from "@/lib/mdd/data/local-case-repository";
 import {
   applyGateToBrief,
   proposeFromHeuristics,
 } from "@/lib/mdd/decision-engine/propose";
-import { CASE_TYPES, type CaseStatus, type DecisionBrief, type DecisionReadiness, type MddCase } from "@/lib/mdd/types";
+import { composeAnalyzeInput } from "@/lib/mdd/attachments";
+import { CASE_TYPES, type CaseStatus, type DecisionBrief, type DecisionReadiness, type IntakeAttachmentRecord, type MddCase } from "@/lib/mdd/types";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 
@@ -44,6 +46,17 @@ export function statusAfterAnalysis(
 ): CaseStatus {
   if (readiness === "NOT_READY") return "WAITING_FOR_INFORMATION";
   return "DECISION_REQUIRED";
+}
+
+/** Match shadcn Input focus ring (blue border + ring) for native intake fields. */
+function intakeFieldClassName(extra?: string) {
+  return cn(
+    "border-input bg-card text-foreground placeholder:text-muted-foreground w-full rounded-lg border px-2.5 text-sm outline-none transition-colors",
+    // Use both focus and focus-visible so mouse click into the field also shows the ring
+    "focus:border-ring focus:ring-3 focus:ring-ring/50",
+    "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+    extra,
+  );
 }
 
 export function MddCaseWorkspace({ caseId }: { caseId: string }) {
@@ -77,6 +90,19 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
     setEditEssentials(false);
     try {
       await persist({ ...caseData, status: "ANALYZING" });
+      const attachments = caseData.attachments ?? [];
+      // Source-bounded Analyze input (narrative + attachments). Heuristic engine
+      // consumes attachments explicitly; composed string documents the boundary.
+      const analyzeInput = composeAnalyzeInput({
+        narrative: caseData.pastedText,
+        attachments,
+      });
+      if (
+        process.env.NODE_ENV === "development" &&
+        typeof window !== "undefined"
+      ) {
+        console.debug("[MDD Analyze input]", analyzeInput.slice(0, 2000));
+      }
       // Phase 1A: client-side heuristic engine (no production LLM; works with static export)
       const proposal = proposeFromHeuristics({
         title: caseData.title,
@@ -84,6 +110,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         pastedText: caseData.pastedText,
         goldenCaseId: caseData.goldenCaseId,
         financeSnapshot: caseData.financeSnapshot,
+        attachments,
       });
       const data: AnalyzeResponse = {
         primaryCaseType: proposal.primaryCaseType,
@@ -112,6 +139,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         presidentDecisionConfirmed: false,
         reviewCandidateFlag: reviewFlag,
         reviewCandidateConfirmed: false,
+        attachments,
         status: nextStatus,
       });
     } catch (e) {
@@ -242,19 +270,23 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
-        <Card>
+        <Card className="overflow-visible">
           <CardHeader>
             <CardTitle>Case Intake</CardTitle>
             <CardDescription>
-              Paste facts, then Analyze. Confirmation of decision essentials
-              happens after the Brief appears.
+              This whole left panel is Case Intake. Enter Title and Vessel, then
+              type or paste the email into Intake / Email / Narrative (not into
+              this heading). Attach files if needed, then click Analyze (top
+              right).
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
+              <Label htmlFor="mdd-intake-title">Title</Label>
+              <input
+                id="mdd-intake-title"
+                type="text"
+                className={intakeFieldClassName("h-9 py-1")}
                 value={caseData.title}
                 onChange={(e) =>
                   setCaseData({ ...caseData, title: e.target.value })
@@ -265,9 +297,11 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="vessel">Vessel</Label>
-              <Input
-                id="vessel"
+              <Label htmlFor="mdd-intake-vessel">Vessel</Label>
+              <input
+                id="mdd-intake-vessel"
+                type="text"
+                className={intakeFieldClassName("h-9 py-1")}
                 value={caseData.vessel ?? ""}
                 onChange={(e) =>
                   setCaseData({ ...caseData, vessel: e.target.value })
@@ -278,11 +312,23 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="paste">Pasted facts</Label>
-              <Textarea
-                id="paste"
-                rows={14}
-                value={caseData.pastedText}
+              <Label htmlFor="mdd-intake-narrative">
+                Intake / Email / Narrative
+              </Label>
+              {/*
+                Native textarea (not shadcn Textarea): avoid `display:flex` +
+                `field-sizing-content`, which collapse height to ~64px.
+                Focus ring matches Title / Vessel (border-ring + ring).
+              */}
+              <textarea
+                id="mdd-intake-narrative"
+                rows={12}
+                spellCheck
+                className={intakeFieldClassName(
+                  "min-h-48 resize-y py-2 leading-relaxed",
+                )}
+                value={caseData.pastedText ?? ""}
+                placeholder="Paste vessel email / narrative here…"
                 onChange={(e) =>
                   setCaseData({ ...caseData, pastedText: e.target.value })
                 }
@@ -291,6 +337,18 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                 }
               />
             </div>
+            <MddIntakeAttachments
+              attachments={caseData.attachments ?? []}
+              disabled={busy || caseData.status === "CLOSED"}
+              onChange={(next: IntakeAttachmentRecord[]) => {
+                setCaseData((prev) => {
+                  if (!prev) return prev;
+                  const updated = { ...prev, attachments: next };
+                  void persist(updated);
+                  return updated;
+                });
+              }}
+            />
             {caseData.financeSnapshot ? (
               <div className="bg-muted/40 flex flex-col gap-1 rounded-md border p-3 text-xs">
                 <p className="font-medium">FinanceSnapshot (manual)</p>
@@ -630,11 +688,12 @@ function HumanConfirmationPanel({
               <Label htmlFor="tags-edit">Tags</Label>
               <Input
                 id="tags-edit"
+                className="bg-card"
                 value={caseData.tags.join(", ")}
-                onChange={(e) =>
+                onValueChange={(value) =>
                   onChange({
                     ...caseData,
-                    tags: e.target.value
+                    tags: value
                       .split(",")
                       .map((t) => t.trim())
                       .filter(Boolean),
@@ -643,7 +702,7 @@ function HumanConfirmationPanel({
                 onBlur={(e) =>
                   onPersist({
                     ...caseData,
-                    tags: e.target.value
+                    tags: (e.target as HTMLInputElement).value
                       .split(",")
                       .map((t) => t.trim())
                       .filter(Boolean),
@@ -655,6 +714,7 @@ function HumanConfirmationPanel({
               <Label htmlFor="rec-edit">Recommendation</Label>
               <Textarea
                 id="rec-edit"
+                className="bg-card"
                 rows={3}
                 value={brief.recommendation}
                 onChange={(e) =>
@@ -675,6 +735,7 @@ function HumanConfirmationPanel({
               <Label htmlFor="pd-edit">President Decision</Label>
               <Textarea
                 id="pd-edit"
+                className="bg-card"
                 rows={3}
                 value={brief.presidentDecision}
                 onChange={(e) =>

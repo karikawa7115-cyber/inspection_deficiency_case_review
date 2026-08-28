@@ -1,5 +1,8 @@
 /** MDD Phase 1 domain types — Design Package v1.1 */
 
+import type { IntakeAttachmentRecord } from "./attachments/types";
+export type { IntakeAttachmentRecord };
+
 export const CASE_TYPES = [
   "OPERATIONAL",
   "TECHNICAL",
@@ -170,6 +173,11 @@ export type MddCase = {
   reviewCandidateFlag: boolean;
   reviewCandidateConfirmed: boolean;
   pastedText: string;
+  /**
+   * Lightweight attachment records (no binary). Original files are session-only
+   * and are not restored after refresh (v0.1). Extracted text may be retained.
+   */
+  attachments?: IntakeAttachmentRecord[];
   structuredFacts: FactItem[];
   contextPack: ContextPack;
   financeSnapshot?: FinanceSnapshot;

@@ -5,10 +5,15 @@ import type {
   DecisionBrief,
   DecisionReadiness,
   FactItem,
+  IntakeAttachmentRecord,
   ManagementLearning,
   MddCase,
   QualityGateResult,
 } from "../types";
+import {
+  composeAnalyzeInput,
+  extractUnverifiedFactCandidates,
+} from "../attachments/compose-analyze-input";
 import {
   evaluateQualityGateV1_1,
   subjectFromProposal,
@@ -57,6 +62,10 @@ function learning(
 /**
  * Deterministic Phase-1 proposer for Golden Case inputs and similar cases.
  * Proposals remain human-confirmable; acceptance truth stays in Spec fixtures.
+ *
+ * Attachments (v0.1): only affect the generic (non-Golden) path. Golden Case
+ * proposals are unchanged when goldenCaseId is set or Golden cues are detected
+ * from title/vessel/pastedText (attachment text is never used for GC detection).
  */
 export function proposeFromHeuristics(input: {
   title: string;
@@ -64,6 +73,7 @@ export function proposeFromHeuristics(input: {
   pastedText: string;
   goldenCaseId?: MddCase["goldenCaseId"];
   financeSnapshot?: MddCase["financeSnapshot"];
+  attachments?: IntakeAttachmentRecord[];
 }): AnalyzeProposal {
   const gc = input.goldenCaseId ?? detectGolden(input);
   switch (gc) {
@@ -587,34 +597,146 @@ function proposeGeneric(input: {
   title: string;
   vessel?: string;
   pastedText: string;
+  attachments?: IntakeAttachmentRecord[];
 }): AnalyzeProposal {
-  const type: CaseType = "OPERATIONAL";
+  const attachments = input.attachments ?? [];
+  const extractedAttachments = attachments.filter(
+    (a) =>
+      a.extractionStatus === "EXTRACTED" &&
+      a.extractedContent.trim().length > 0,
+  );
+  const previewOnly = attachments.filter(
+    (a) => a.extractionStatus === "PREVIEW_ONLY",
+  );
+  const failed = attachments.filter((a) => a.extractionStatus === "FAILED");
+
+  // Bounded Analyze input with explicit source boundaries (narrative + attachments).
+  const analyzeInput = composeAnalyzeInput({
+    narrative: input.pastedText,
+    attachments,
+  });
+
+  const attachmentFacts = extractUnverifiedFactCandidates(extractedAttachments);
+  const unverifiedFacts: FactItem[] = attachmentFacts.map((c) =>
+    fact("unverified", c.text, {
+      evidenceRequired: c.sourceLabel,
+    }),
+  );
+
+  for (const a of previewOnly) {
+    unverifiedFacts.push(
+      fact(
+        "unverified",
+        `Attachment present without semantic extraction: ${a.fileName} (${a.extractionNote ?? "PREVIEW_ONLY"})`,
+        { evidenceRequired: `Source: ${a.fileName}` },
+      ),
+    );
+  }
+  for (const a of failed) {
+    unverifiedFacts.push(
+      fact(
+        "unverified",
+        `Attachment extraction failed: ${a.fileName} — do not invent its contents. (${a.extractionNote ?? "FAILED"})`,
+        { evidenceRequired: `Source: ${a.fileName}` },
+      ),
+    );
+  }
+
+  const hasNarrative = input.pastedText.trim().length > 0;
+  const confirmedFacts: FactItem[] = [];
+  if (hasNarrative) {
+    confirmedFacts.push(
+      fact(
+        "confirmed",
+        "User-pasted intake text is present (content not yet verified as operational fact).",
+      ),
+    );
+  }
+  if (extractedAttachments.length > 0) {
+    confirmedFacts.push(
+      fact(
+        "confirmed",
+        `${extractedAttachments.length} attachment(s) yielded extractable text; lines below are Reported but Unverified until human confirmation.`,
+      ),
+    );
+  }
+
+  const missingInformation: FactItem[] = [
+    fact(
+      "missing",
+      "Key confirmed facts and decision question are not yet structured.",
+      {
+        who: "Case owner",
+        what: "Decision question and confirmed facts",
+        evidenceRequired: "Structured intake",
+      },
+    ),
+  ];
+  if (attachments.length > 0 && extractedAttachments.length === 0) {
+    missingInformation.push(
+      fact(
+        "missing",
+        "Attached files did not yield usable text (FAILED or PREVIEW_ONLY). Re-supply text, a text-layer PDF, or spreadsheet — do not invent.",
+        {
+          who: "Case owner",
+          what: "Readable attachment content",
+          evidenceRequired: "Re-extractable source file",
+        },
+      ),
+    );
+  }
+
+  const type: CaseType = inferGenericCaseType(
+    `${input.title}\n${input.pastedText}\n${attachmentFacts.map((f) => f.text).join("\n")}`,
+  );
+
+  const typeTag =
+    type === "TECHNICAL"
+      ? "technical"
+      : type === "INSPECTION_COMPLIANCE"
+        ? "inspection_compliance"
+        : type === "FINANCE_COMMERCIAL"
+          ? "finance"
+          : "operational";
+
   return {
     primaryCaseType: type,
-    tags: input.vessel ? [input.vessel.toLowerCase().replace(/\s+/g, "_")] : [],
+    tags: [
+      ...(input.vessel
+        ? [input.vessel.toLowerCase().replace(/\s+/g, "_")]
+        : []),
+      typeTag,
+      ...(extractedAttachments.length > 0 ? ["attachment_sourced"] : []),
+    ],
     brief: baseBrief({
       recommendation:
-        "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
+        extractedAttachments.length > 0
+          ? "Review attachment-sourced Reported facts against the email narrative, confirm what is operationally true, identify contradictions without silently reconciling them, and escalate only what requires a President Decision."
+          : "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
       decisionReadiness: "NOT_READY",
       decisionAuthorities: [
         auth("Case coordination", "Other"),
         auth("Final management confirmation if required", "President/DP"),
       ],
-      presidentDecision: "President Decision: Not required at this stage — pending structured facts.",
-      why: "Insufficient structured analysis for a management decision.",
-      confirmedFacts: input.pastedText
-        ? [fact("confirmed", "User-pasted intake text is present (content not yet verified).")]
-        : [],
-      unverifiedFacts: [],
+      presidentDecision:
+        "President Decision: Not required at this stage — pending structured facts.",
+      why:
+        extractedAttachments.length > 0
+          ? "Attachment text was ingested with explicit source boundaries, but attachment content is not auto-confirmed. Human verification of Reported facts and the decision question is still required."
+          : "Insufficient structured analysis for a management decision.",
+      confirmedFacts,
+      unverifiedFacts,
       assumptions: [],
-      missingInformation: [
-        fact("missing", "Key confirmed facts and decision question are not yet structured.", {
-          who: "Case owner",
-          what: "Decision question and confirmed facts",
-          evidenceRequired: "Structured intake",
-        }),
+      missingInformation,
+      risks: [
+        "Acting on unstructured intake",
+        ...(extractedAttachments.length > 0
+          ? [
+              "Treating attachment extraction as confirmed fact without human review",
+              "Silently reconciling conflicts between email narrative and attachments",
+            ]
+          : []),
       ],
-      risks: ["Acting on unstructured intake"],
       options: [],
       delegation: [
         {
@@ -623,17 +745,56 @@ function proposeGeneric(input: {
           task: "Structure facts and identify decision owner(s).",
         },
       ],
-      learning: learning({}),
+      learning: learning({
+        notes:
+          attachments.length > 0
+            ? `Analyze input composed with source boundaries (${analyzeInput.length} chars). Attachment-derived lines are Reported but Unverified — not auto-confirmed.`
+            : undefined,
+      }),
       nextActions: [
         {
           id: id("act"),
-          text: "Complete structured fact entry and re-analyze.",
+          text:
+            extractedAttachments.length > 0
+              ? "Confirm or reject attachment-sourced Reported facts, then re-analyze."
+              : "Complete structured fact entry and re-analyze.",
           owner: "Case owner",
           status: "open",
         },
       ],
     }),
   };
+}
+
+/** Lightweight type hint from intake+attachment text — not Golden-specific. */
+function inferGenericCaseType(blob: string): CaseType {
+  const t = blob.toLowerCase();
+  if (
+    t.includes("generator") ||
+    t.includes("valve") ||
+    t.includes("diesel") ||
+    t.includes("engine") ||
+    t.includes("defect") ||
+    t.includes("trouble report") ||
+    t.includes("machinery")
+  ) {
+    return "TECHNICAL";
+  }
+  if (
+    t.includes("psc") ||
+    t.includes("audit") ||
+    t.includes("deficiency") ||
+    t.includes("ism")
+  ) {
+    return "INSPECTION_COMPLIANCE";
+  }
+  if (t.includes("ctm") || t.includes("invoice") || t.includes("remittance")) {
+    return "FINANCE_COMMERCIAL";
+  }
+  if (t.includes("crew") || t.includes("manning") || t.includes("visa")) {
+    return "CREW_MANNING";
+  }
+  return "OPERATIONAL";
 }
 
 function baseBrief(
@@ -772,6 +933,7 @@ export function createEmptyCase(partial?: Partial<MddCase>): MddCase {
     reviewCandidateFlag: false,
     reviewCandidateConfirmed: false,
     pastedText: "",
+    attachments: [],
     structuredFacts: [],
     contextPack: {
       companyCore: true,
