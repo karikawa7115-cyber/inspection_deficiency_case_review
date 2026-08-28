@@ -33,8 +33,12 @@ function makeXlsxFile(): File {
     | ArrayBuffer
     | Uint8Array;
   const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
+  const ab = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
   return new File(
-    [bytes],
+    [ab],
     "CR-8,9 Trouble report form (open and close) 【No. 1 Diesel GE 3 way FO Outlet Valve Defective】24-Aug-2026.xlsx",
     {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

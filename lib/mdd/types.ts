@@ -158,6 +158,24 @@ export type DecisionBrief = {
   learning: ManagementLearning;
   qualityGate: QualityGateResult;
   generatedAt: string;
+  /**
+   * UI-only Continuity v0.1 — questions for vessel/shore (copy chips).
+   * Not part of Structured Output Schema v1.0.
+   */
+  suggestedQuestionsToVessel?: string[];
+};
+
+/**
+ * Case Follow-up Continuity v0.1 — additive replies on the same Case.
+ * Attachments live in `MddCase.attachments` and are linked by id.
+ */
+export type CaseFollowUp = {
+  followUpId: string;
+  createdAt: string;
+  /** Optional — e.g. Master, Superintendent, Phone note */
+  authorLabel?: string;
+  text: string;
+  attachmentIds?: string[];
 };
 
 export type MddCase = {
@@ -176,8 +194,11 @@ export type MddCase = {
   /**
    * Lightweight attachment records (no binary). Original files are session-only
    * and are not restored after refresh (v0.1). Extracted text may be retained.
+   * Includes case-level and follow-up-linked attachments.
    */
   attachments?: IntakeAttachmentRecord[];
+  /** Additive follow-ups on the same case (Continuity v0.1). */
+  followUps?: CaseFollowUp[];
   structuredFacts: FactItem[];
   contextPack: ContextPack;
   financeSnapshot?: FinanceSnapshot;

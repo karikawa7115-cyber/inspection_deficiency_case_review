@@ -48,12 +48,18 @@ type Props = {
   attachments: IntakeAttachmentRecord[];
   onChange: (next: IntakeAttachmentRecord[]) => void;
   disabled?: boolean;
+  /** Section heading — default "Attachments" */
+  title?: string;
+  /** Hide long persistence note (follow-up draft) */
+  compact?: boolean;
 };
 
 export function MddIntakeAttachments({
   attachments,
   onChange,
   disabled,
+  title = "Attachments",
+  compact = false,
 }: Props) {
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -163,12 +169,14 @@ export function MddIntakeAttachments({
 
   return (
     <div className="flex flex-col gap-2">
-      <Label>Attachments</Label>
-      <p className="text-muted-foreground text-xs">
-        Drag & drop or browse. Original files stay in this browser session only;
-        after refresh, re-attach binaries if needed (extracted text is kept when
-        saved).
-      </p>
+      <Label>{title}</Label>
+      {!compact ? (
+        <p className="text-muted-foreground text-xs">
+          Drag & drop or browse. Original files stay in this browser session only;
+          after refresh, re-attach binaries if needed (extracted text is kept when
+          saved).
+        </p>
+      ) : null}
 
       <div
         className={cn(

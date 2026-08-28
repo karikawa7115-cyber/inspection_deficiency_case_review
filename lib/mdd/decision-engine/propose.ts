@@ -1,6 +1,7 @@
 import type {
   AnalyzeProposal,
   CaseType,
+  CaseFollowUp,
   DecisionAuthorityItem,
   DecisionBrief,
   DecisionReadiness,
@@ -74,6 +75,7 @@ export function proposeFromHeuristics(input: {
   goldenCaseId?: MddCase["goldenCaseId"];
   financeSnapshot?: MddCase["financeSnapshot"];
   attachments?: IntakeAttachmentRecord[];
+  followUps?: CaseFollowUp[];
 }): AnalyzeProposal {
   const gc = input.goldenCaseId ?? detectGolden(input);
   switch (gc) {
@@ -598,8 +600,10 @@ function proposeGeneric(input: {
   vessel?: string;
   pastedText: string;
   attachments?: IntakeAttachmentRecord[];
+  followUps?: CaseFollowUp[];
 }): AnalyzeProposal {
   const attachments = input.attachments ?? [];
+  const followUps = input.followUps ?? [];
   const extractedAttachments = attachments.filter(
     (a) =>
       a.extractionStatus === "EXTRACTED" &&
@@ -610,10 +614,10 @@ function proposeGeneric(input: {
   );
   const failed = attachments.filter((a) => a.extractionStatus === "FAILED");
 
-  // Bounded Analyze input with explicit source boundaries (narrative + attachments).
   const analyzeInput = composeAnalyzeInput({
     narrative: input.pastedText,
     attachments,
+    followUps,
   });
 
   const attachmentFacts = extractUnverifiedFactCandidates(extractedAttachments);
@@ -642,6 +646,20 @@ function proposeGeneric(input: {
     );
   }
 
+  followUps.forEach((fu, i) => {
+    const label = fu.authorLabel?.trim()
+      ? `Follow-up ${i + 1} (${fu.authorLabel.trim()})`
+      : `Follow-up ${i + 1}`;
+    const snippet = fu.text.trim().slice(0, 220);
+    if (snippet) {
+      unverifiedFacts.push(
+        fact("unverified", `${snippet}${fu.text.trim().length > 220 ? "…" : ""}`, {
+          evidenceRequired: `Source: ${label}`,
+        }),
+      );
+    }
+  });
+
   const hasNarrative = input.pastedText.trim().length > 0;
   const confirmedFacts: FactItem[] = [];
   if (hasNarrative) {
@@ -657,6 +675,14 @@ function proposeGeneric(input: {
       fact(
         "confirmed",
         `${extractedAttachments.length} attachment(s) yielded extractable text; lines below are Reported but Unverified until human confirmation.`,
+      ),
+    );
+  }
+  if (followUps.length > 0) {
+    confirmedFacts.push(
+      fact(
+        "confirmed",
+        `${followUps.length} follow-up(s) included in Analyze input (Reported but Unverified until human confirmation).`,
       ),
     );
   }
@@ -687,8 +713,16 @@ function proposeGeneric(input: {
   }
 
   const type: CaseType = inferGenericCaseType(
-    `${input.title}\n${input.pastedText}\n${attachmentFacts.map((f) => f.text).join("\n")}`,
+    `${input.title}\n${input.pastedText}\n${attachmentFacts.map((f) => f.text).join("\n")}\n${followUps.map((f) => f.text).join("\n")}`,
   );
+
+  const suggestedQuestionsToVessel = buildSuggestedQuestionsToVessel({
+    caseType: type,
+    title: input.title,
+    pastedText: input.pastedText,
+    attachmentBlob: attachmentFacts.map((f) => f.text).join("\n"),
+    followUpCount: followUps.length,
+  });
 
   const typeTag =
     type === "TECHNICAL"
@@ -707,63 +741,144 @@ function proposeGeneric(input: {
         : []),
       typeTag,
       ...(extractedAttachments.length > 0 ? ["attachment_sourced"] : []),
+      ...(followUps.length > 0 ? ["follow_up"] : []),
     ],
-    brief: baseBrief({
-      recommendation:
-        extractedAttachments.length > 0
-          ? "Review attachment-sourced Reported facts against the email narrative, confirm what is operationally true, identify contradictions without silently reconciling them, and escalate only what requires a President Decision."
-          : "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
-      decisionReadiness: "NOT_READY",
-      decisionAuthorities: [
-        auth("Case coordination", "Other"),
-        auth("Final management confirmation if required", "President/DP"),
-      ],
-      presidentDecision:
-        "President Decision: Not required at this stage — pending structured facts.",
-      why:
-        extractedAttachments.length > 0
-          ? "Attachment text was ingested with explicit source boundaries, but attachment content is not auto-confirmed. Human verification of Reported facts and the decision question is still required."
-          : "Insufficient structured analysis for a management decision.",
-      confirmedFacts,
-      unverifiedFacts,
-      assumptions: [],
-      missingInformation,
-      risks: [
-        "Acting on unstructured intake",
-        ...(extractedAttachments.length > 0
-          ? [
-              "Treating attachment extraction as confirmed fact without human review",
-              "Silently reconciling conflicts between email narrative and attachments",
-            ]
-          : []),
-      ],
-      options: [],
-      delegation: [
-        {
-          id: id("del"),
-          assignee: "Case coordinator",
-          task: "Structure facts and identify decision owner(s).",
-        },
-      ],
-      learning: learning({
-        notes:
-          attachments.length > 0
-            ? `Analyze input composed with source boundaries (${analyzeInput.length} chars). Attachment-derived lines are Reported but Unverified — not auto-confirmed.`
-            : undefined,
+    brief: {
+      ...baseBrief({
+        recommendation:
+          extractedAttachments.length > 0 || followUps.length > 0
+            ? "Review attachment- and follow-up-sourced Reported facts against the email narrative, confirm what is operationally true, identify contradictions without silently reconciling them, and escalate only what requires a President Decision."
+            : "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
+        decisionReadiness: "NOT_READY",
+        decisionAuthorities: [
+          auth("Case coordination", "Other"),
+          auth("Final management confirmation if required", "President/DP"),
+        ],
+        presidentDecision:
+          "President Decision: Not required at this stage — pending structured facts.",
+        why:
+          followUps.length > 0
+            ? "Follow-up material was added with explicit source boundaries, but content is not auto-confirmed. Human verification of Reported facts and the decision question is still required."
+            : extractedAttachments.length > 0
+              ? "Attachment text was ingested with explicit source boundaries, but attachment content is not auto-confirmed. Human verification of Reported facts and the decision question is still required."
+              : "Insufficient structured analysis for a management decision.",
+        confirmedFacts,
+        unverifiedFacts,
+        assumptions: [],
+        missingInformation,
+        risks: [
+          "Acting on unstructured intake",
+          ...(extractedAttachments.length > 0
+            ? [
+                "Treating attachment extraction as confirmed fact without human review",
+                "Silently reconciling conflicts between email narrative and attachments",
+              ]
+            : []),
+          ...(followUps.length > 0
+            ? [
+                "Treating follow-up replies as confirmed without human review",
+                "Silently reconciling conflicts across narrative, attachments, and follow-ups",
+              ]
+            : []),
+        ],
+        options: [],
+        delegation: [
+          {
+            id: id("del"),
+            assignee: "Case coordinator",
+            task: "Structure facts and identify decision owner(s).",
+          },
+        ],
+        learning: learning({
+          notes: [
+            attachments.length > 0 || followUps.length > 0
+              ? `Analyze input composed with source boundaries (${analyzeInput.length} chars). Attachment/follow-up lines are Reported but Unverified — not auto-confirmed.`
+              : undefined,
+            followUps.length > 0
+              ? `${followUps.length} follow-up(s) included.`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        }),
+        nextActions: [
+          {
+            id: id("act"),
+            text:
+              suggestedQuestionsToVessel.length > 0
+                ? "Send suggested questions to vessel/shore, paste replies as Follow-up, then re-analyze."
+                : extractedAttachments.length > 0
+                  ? "Confirm or reject attachment-sourced Reported facts, then re-analyze."
+                  : "Complete structured fact entry and re-analyze.",
+            owner: "Case owner",
+            status: "open",
+          },
+        ],
       }),
-      nextActions: [
-        {
-          id: id("act"),
-          text:
-            extractedAttachments.length > 0
-              ? "Confirm or reject attachment-sourced Reported facts, then re-analyze."
-              : "Complete structured fact entry and re-analyze.",
-          owner: "Case owner",
-          status: "open",
-        },
-      ],
-    }),
+      suggestedQuestionsToVessel,
+    },
   };
+}
+
+/** UI chips only — questions to ask, not asserted facts. */
+function buildSuggestedQuestionsToVessel(input: {
+  caseType: CaseType;
+  title: string;
+  pastedText: string;
+  attachmentBlob: string;
+  followUpCount: number;
+}): string[] {
+  const blob =
+    `${input.title}\n${input.pastedText}\n${input.attachmentBlob}`.toLowerCase();
+  const qs: string[] = [];
+
+  if (input.caseType === "TECHNICAL") {
+    qs.push(
+      "Is the affected equipment currently usable / available for operation?",
+    );
+    qs.push("What temporary / contingency measures are in place onboard now?");
+    qs.push("What is the estimated parts / repair completion timing?");
+  }
+  if (
+    blob.includes("valve") ||
+    blob.includes("generator") ||
+    blob.includes("diesel") ||
+    blob.includes("contamination") ||
+    blob.includes("vlsfo")
+  ) {
+    qs.push(
+      "Please confirm contamination extent and whether DO service tank / FO system isolation is complete.",
+    );
+    qs.push(
+      "What Class / company notifications (if any) have already been made?",
+    );
+  }
+  if (input.caseType === "CREW_MANNING") {
+    qs.push("What is the latest embarkation / document readiness status?");
+  }
+  if (input.caseType === "FINANCE_COMMERCIAL") {
+    qs.push("Please confirm latest Ship Fund / pending expense figures and as-of date.");
+  }
+  if (input.followUpCount === 0) {
+    qs.push(
+      "Who onboard owns this issue now (Master / C/E / other), and what decision do you need from shore?",
+    );
+  } else {
+    qs.push(
+      "Please confirm any remaining open points after the latest follow-up (list unknowns only).",
+    );
+  }
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const q of qs) {
+    const key = q.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(q);
+    if (out.length >= 6) break;
+  }
+  return out;
 }
 
 /** Lightweight type hint from intake+attachment text — not Golden-specific. */
@@ -934,6 +1049,7 @@ export function createEmptyCase(partial?: Partial<MddCase>): MddCase {
     reviewCandidateConfirmed: false,
     pastedText: "",
     attachments: [],
+    followUps: [],
     structuredFacts: [],
     contextPack: {
       companyCore: true,

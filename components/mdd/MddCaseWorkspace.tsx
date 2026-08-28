@@ -24,6 +24,7 @@ import {
   ReviewCandidateBadge,
 } from "@/components/mdd/MddStatusBadges";
 import { MddIntakeAttachments } from "@/components/mdd/MddIntakeAttachments";
+import { MddFollowUpThread } from "@/components/mdd/MddFollowUpThread";
 import { localCaseRepository } from "@/lib/mdd/data/local-case-repository";
 import {
   applyGateToBrief,
@@ -91,11 +92,11 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
     try {
       await persist({ ...caseData, status: "ANALYZING" });
       const attachments = caseData.attachments ?? [];
-      // Source-bounded Analyze input (narrative + attachments). Heuristic engine
-      // consumes attachments explicitly; composed string documents the boundary.
+      const followUps = caseData.followUps ?? [];
       const analyzeInput = composeAnalyzeInput({
         narrative: caseData.pastedText,
         attachments,
+        followUps,
       });
       if (
         process.env.NODE_ENV === "development" &&
@@ -103,7 +104,6 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
       ) {
         console.debug("[MDD Analyze input]", analyzeInput.slice(0, 2000));
       }
-      // Phase 1A: client-side heuristic engine (no production LLM; works with static export)
       const proposal = proposeFromHeuristics({
         title: caseData.title,
         vessel: caseData.vessel,
@@ -111,6 +111,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         goldenCaseId: caseData.goldenCaseId,
         financeSnapshot: caseData.financeSnapshot,
         attachments,
+        followUps,
       });
       const data: AnalyzeResponse = {
         primaryCaseType: proposal.primaryCaseType,
@@ -123,11 +124,15 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
           financeSnapshot: caseData.financeSnapshot,
         }),
       };
+      // Preserve UI-only Continuity fields across gate apply
+      data.brief.suggestedQuestionsToVessel =
+        proposal.brief.suggestedQuestionsToVessel;
       const reviewFlag =
         caseData.goldenCaseId === "GC03"
           ? true
           : caseData.reviewCandidateFlag;
       const nextStatus = statusAfterAnalysis(data.brief.decisionReadiness);
+      // Human confirmation flags reset on every Analyze / Re-analyze (Continuity §9.3)
       await persist({
         ...caseData,
         primaryCaseType: data.primaryCaseType,
@@ -140,6 +145,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         reviewCandidateFlag: reviewFlag,
         reviewCandidateConfirmed: false,
         attachments,
+        followUps,
         status: nextStatus,
       });
     } catch (e) {
@@ -199,6 +205,14 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
 
   const brief = caseData.brief;
   const pendingConfirm = Boolean(brief) && !essentialsConfirmed;
+  const allAttachments = caseData.attachments ?? [];
+  const followUps = caseData.followUps ?? [];
+  const followUpAttachmentIds = new Set(
+    followUps.flatMap((f) => f.attachmentIds ?? []),
+  );
+  const caseLevelAttachments = allAttachments.filter(
+    (a) => !followUpAttachmentIds.has(a.attachmentId),
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
@@ -338,12 +352,60 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               />
             </div>
             <MddIntakeAttachments
-              attachments={caseData.attachments ?? []}
+              attachments={caseLevelAttachments}
               disabled={busy || caseData.status === "CLOSED"}
               onChange={(next: IntakeAttachmentRecord[]) => {
                 setCaseData((prev) => {
                   if (!prev) return prev;
-                  const updated = { ...prev, attachments: next };
+                  const linked = (prev.attachments ?? []).filter((a) =>
+                    (prev.followUps ?? []).some((f) =>
+                      (f.attachmentIds ?? []).includes(a.attachmentId),
+                    ),
+                  );
+                  const updated = {
+                    ...prev,
+                    attachments: [...next, ...linked],
+                  };
+                  void persist(updated);
+                  return updated;
+                });
+              }}
+            />
+            <MddFollowUpThread
+              followUps={followUps}
+              allAttachments={allAttachments}
+              disabled={busy || caseData.status === "CLOSED"}
+              onAdd={(followUp, newAttachments) => {
+                setCaseData((prev) => {
+                  if (!prev) return prev;
+                  const updated = {
+                    ...prev,
+                    followUps: [...(prev.followUps ?? []), followUp],
+                    attachments: [
+                      ...(prev.attachments ?? []),
+                      ...newAttachments,
+                    ],
+                  };
+                  void persist(updated);
+                  return updated;
+                });
+              }}
+              onRemove={(followUpId) => {
+                setCaseData((prev) => {
+                  if (!prev) return prev;
+                  const target = (prev.followUps ?? []).find(
+                    (f) => f.followUpId === followUpId,
+                  );
+                  const removeIds = new Set(target?.attachmentIds ?? []);
+                  const updated = {
+                    ...prev,
+                    followUps: (prev.followUps ?? []).filter(
+                      (f) => f.followUpId !== followUpId,
+                    ),
+                    attachments: (prev.attachments ?? []).filter(
+                      (a) => !removeIds.has(a.attachmentId),
+                    ),
+                  };
                   void persist(updated);
                   return updated;
                 });
@@ -508,6 +570,12 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                       ))}
                     </ul>
                   </section>
+
+                  {(brief.suggestedQuestionsToVessel?.length ?? 0) > 0 ? (
+                    <SuggestedQuestionsChips
+                      questions={brief.suggestedQuestionsToVessel!}
+                    />
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -523,6 +591,11 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   items={brief.missingInformation}
                   showWho
                 />
+                {(brief.suggestedQuestionsToVessel?.length ?? 0) > 0 ? (
+                  <SuggestedQuestionsChips
+                    questions={brief.suggestedQuestionsToVessel!}
+                  />
+                ) : null}
                 <div className="flex flex-col gap-1">
                   <p className="text-sm font-medium">Risks</p>
                   <ul className="list-disc pl-4 text-sm">
@@ -819,6 +892,46 @@ function DetailSection({
         </CollapsibleContent>
       </Card>
     </Collapsible>
+  );
+}
+
+function SuggestedQuestionsChips({ questions }: { questions: string[] }) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function copyQuestion(q: string) {
+    try {
+      await navigator.clipboard.writeText(q);
+      setCopied(q);
+      window.setTimeout(() => setCopied(null), 1500);
+    } catch {
+      // ignore clipboard failures in restricted contexts
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        Suggested questions to vessel
+      </h3>
+      <p className="text-muted-foreground text-xs">
+        Click a chip to copy, then paste into email or Add follow-up when the
+        reply arrives.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {questions.map((q) => (
+          <Button
+            key={q}
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-auto max-w-full whitespace-normal px-2.5 py-1.5 text-left text-xs"
+            onClick={() => void copyQuestion(q)}
+          >
+            {copied === q ? "Copied" : q}
+          </Button>
+        ))}
+      </div>
+    </section>
   );
 }
 

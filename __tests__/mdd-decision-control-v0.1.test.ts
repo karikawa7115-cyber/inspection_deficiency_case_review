@@ -358,6 +358,7 @@ describe("Decision Control v0.1", () => {
         finance: {
           separationPreserved: false,
           doNotAuthorizePayment: false,
+          forecastsLabeledAsNonAccounting: false,
           companyFinancialFeasibility: {
             liquidityConfirmed: false,
             blockingIfUnconfirmed: true,

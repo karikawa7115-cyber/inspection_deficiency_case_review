@@ -16,8 +16,10 @@ export {
   guessMimeType,
   isSupportedAttachmentFileName,
   newAttachmentId,
+  newFollowUpId,
   toPersistedAttachment,
   truncateExtracted,
+  type FollowUpForAnalyze,
 } from "./compose-analyze-input";
 export {
   extractAttachmentContent,

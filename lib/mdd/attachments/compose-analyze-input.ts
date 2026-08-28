@@ -1,6 +1,15 @@
 import type { IntakeAttachmentRecord } from "./types";
 import { SUPPORTED_ATTACHMENT_EXTENSIONS } from "./types";
 
+/** Minimal follow-up shape for Analyze composition (avoids circular imports). */
+export type FollowUpForAnalyze = {
+  followUpId: string;
+  createdAt: string;
+  authorLabel?: string;
+  text: string;
+  attachmentIds?: string[];
+};
+
 const MAX_EXTRACTED_CHARS = 80_000;
 
 export function extensionOf(fileName: string): string {
@@ -58,6 +67,10 @@ export function newAttachmentId(): string {
   return `att_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export function newFollowUpId(): string {
+  return `fu_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Strip session-only fields before LocalStorage write. */
 export function toPersistedAttachment(
   a: IntakeAttachmentRecord & { previewUrl?: string },
@@ -74,6 +87,38 @@ export function toPersistedAttachment(
   };
 }
 
+function appendAttachmentBlock(
+  parts: string[],
+  att: IntakeAttachmentRecord,
+  heading: string,
+) {
+  parts.push("");
+  parts.push(heading);
+  parts.push(`Filename: ${att.fileName}`);
+  parts.push(`Type: ${att.mimeType}`);
+  parts.push(`Size: ${att.size}`);
+  parts.push(`Extraction status: ${att.extractionStatus}`);
+  if (att.extractionNote) {
+    parts.push(`Note: ${att.extractionNote}`);
+  }
+
+  if (
+    att.extractionStatus === "EXTRACTED" &&
+    att.extractedContent.trim().length > 0
+  ) {
+    parts.push("");
+    parts.push(att.extractedContent.trim());
+  } else if (att.extractionStatus === "PREVIEW_ONLY") {
+    parts.push("");
+    parts.push(
+      `(No semantic text extracted from this attachment. Preview/metadata only.)`,
+    );
+  } else if (att.extractionStatus === "FAILED") {
+    parts.push("");
+    parts.push(`(Extraction failed. Do not invent content for this file.)`);
+  }
+}
+
 /**
  * Build Analyze input with explicit source boundaries.
  * Does not invent content for FAILED / PREVIEW_ONLY beyond status notes.
@@ -81,37 +126,43 @@ export function toPersistedAttachment(
 export function composeAnalyzeInput(input: {
   narrative: string;
   attachments: IntakeAttachmentRecord[];
+  followUps?: FollowUpForAnalyze[];
 }): string {
   const parts: string[] = [];
   parts.push("[INTAKE NARRATIVE]");
   parts.push(input.narrative.trim() || "(empty)");
 
-  input.attachments.forEach((att, index) => {
-    parts.push("");
-    parts.push(`[ATTACHMENT ${index + 1}]`);
-    parts.push(`Filename: ${att.fileName}`);
-    parts.push(`Type: ${att.mimeType}`);
-    parts.push(`Size: ${att.size}`);
-    parts.push(`Extraction status: ${att.extractionStatus}`);
-    if (att.extractionNote) {
-      parts.push(`Note: ${att.extractionNote}`);
-    }
+  const followUps = input.followUps ?? [];
+  const linkedIds = new Set(followUps.flatMap((f) => f.attachmentIds ?? []));
+  const caseLevel = input.attachments.filter(
+    (a) => !linkedIds.has(a.attachmentId),
+  );
+  const byId = new Map(
+    input.attachments.map((a) => [a.attachmentId, a] as const),
+  );
 
-    if (
-      att.extractionStatus === "EXTRACTED" &&
-      att.extractedContent.trim().length > 0
-    ) {
-      parts.push("");
-      parts.push(att.extractedContent.trim());
-    } else if (att.extractionStatus === "PREVIEW_ONLY") {
-      parts.push("");
-      parts.push(
-        `(No semantic text extracted from this attachment. Preview/metadata only.)`,
-      );
-    } else if (att.extractionStatus === "FAILED") {
-      parts.push("");
-      parts.push(`(Extraction failed. Do not invent content for this file.)`);
+  caseLevel.forEach((att, index) => {
+    appendAttachmentBlock(parts, att, `[ATTACHMENT ${index + 1}]`);
+  });
+
+  followUps.forEach((fu, index) => {
+    parts.push("");
+    parts.push(`[FOLLOW-UP ${index + 1}]`);
+    parts.push(`At: ${fu.createdAt}`);
+    if (fu.authorLabel?.trim()) {
+      parts.push(`Author: ${fu.authorLabel.trim()}`);
     }
+    parts.push(fu.text.trim() || "(empty)");
+
+    (fu.attachmentIds ?? []).forEach((id, attIndex) => {
+      const att = byId.get(id);
+      if (!att) return;
+      appendAttachmentBlock(
+        parts,
+        att,
+        `[FOLLOW-UP ${index + 1} ATTACHMENT ${attIndex + 1}]`,
+      );
+    });
   });
 
   return parts.join("\n");
