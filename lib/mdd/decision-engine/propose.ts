@@ -682,15 +682,15 @@ function proposeGeneric(input: {
     brief: {
       ...baseBrief({
         recommendation:
-          "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
+          "事実を整理し、不足情報を特定し、判断権限を割り当てる。経営確認が必要な事項に限って President Decision を準備する。",
         decisionReadiness: "NOT_READY",
         decisionAuthorities: [
-          auth("Case coordination", "Other"),
-          auth("Final management confirmation if required", "President/DP"),
+          auth("案件調整・事実確認", "Superintendent"),
+          auth("経営確認（必要な場合のみ）", "President/DP"),
         ],
         presidentDecision:
-          "President Decision: Not required at this stage — pending structured facts.",
-        why: "Insufficient structured analysis for a management decision.",
+          "社長判断：現時点では不要 — 構造化された事実が揃うまで保留。",
+        why: "経営判断に足る構造化分析が不足している。",
         confirmedFacts,
         unverifiedFacts: [],
         assumptions: [],
@@ -708,7 +708,7 @@ function proposeGeneric(input: {
         nextActions: [
           {
             id: id("act"),
-            text: "Complete structured fact entry and re-analyze.",
+            text: "構造化された事実入力を完了し、再解析する。",
             owner: "Case owner",
             status: "open",
           },
@@ -1091,6 +1091,51 @@ export function runQualityGate(input: {
   };
 }
 
+/**
+ * Ensure Why / explanatory copy matches the Gate-owned final readiness.
+ * Strips pre-Gate readiness verdicts that would contradict the badge.
+ */
+export function alignWhyWithFinalReadiness(
+  why: string,
+  final: DecisionReadiness,
+): string {
+  const label =
+    final === "READY"
+      ? "判断可能（READY）"
+      : final === "CONDITIONAL"
+        ? "条件付き（CONDITIONAL）"
+        : "判断不可（NOT READY）";
+
+  let cleaned = why
+    .replace(/\s*Readiness is (READY|CONDITIONAL|NOT_READY)\b[^.。]*[.。]?/gi, " ")
+    .replace(/\s*Decision remains NOT[_\s-]?READY\b[^.。]*[.。]?/gi, " ")
+    .replace(/\s*最終の判断準備状況は[^。\n]*。/g, " ")
+    .replace(
+      /\s*現時点は(?:判断可能（READY）|条件付き（CONDITIONAL）|判断不可（NOT READY）)[。.]?/g,
+      " ",
+    )
+    .replace(
+      /\s*判断準備状況は(?:READY|CONDITIONAL|NOT_READY|判断可能（READY）|条件付き（CONDITIONAL）|判断不可（NOT READY）)[^.。]*[.。]?/gi,
+      " ",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  // Neutralize leftover contradictory readiness tokens in explanatory sentences.
+  if (final === "CONDITIONAL") {
+    cleaned = cleaned.replace(/\bNOT[_\s-]?READY\b/gi, "CONDITIONAL");
+  } else if (final === "READY") {
+    cleaned = cleaned.replace(/\bNOT[_\s-]?READY\b/gi, "READY");
+    cleaned = cleaned.replace(/\bCONDITIONAL\b/g, "READY");
+  } else {
+    cleaned = cleaned.replace(/\bCONDITIONAL\b/g, "NOT_READY");
+  }
+
+  const needsPeriod = cleaned.length > 0 && !/[。.!？?]$/.test(cleaned);
+  const body = cleaned ? `${cleaned}${needsPeriod ? "。" : ""}` : "";
+  return `${body}最終の判断準備状況は${label}。`;
+}
+
 export function applyGateToBrief(
   proposal: AnalyzeProposal,
   opts?: {
@@ -1137,6 +1182,10 @@ export function applyGateToBrief(
   return {
     ...proposal.brief,
     decisionReadiness: evaluation.enforcedReadiness,
+    why: alignWhyWithFinalReadiness(
+      proposal.brief.why,
+      evaluation.enforcedReadiness,
+    ),
     qualityGate: {
       passed: evaluation.passed,
       criticalFailures: evaluation.criticalFailures.map(

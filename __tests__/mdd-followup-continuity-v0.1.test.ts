@@ -84,7 +84,7 @@ describe("Case Follow-up Continuity v0.1", () => {
     expect(proposal.brief.suggestedQuestionsToVessel?.length).toBeGreaterThan(0);
     expect(
       proposal.brief.suggestedQuestionsToVessel?.some((q) =>
-        /usable|temporary|parts/i.test(q),
+        /usable|temporary|parts|使用可否|修理|部品|通知|担当/i.test(q),
       ),
     ).toBe(true);
   });

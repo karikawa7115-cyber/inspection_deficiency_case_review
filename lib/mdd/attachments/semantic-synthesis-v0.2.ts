@@ -396,21 +396,21 @@ export function synthesizeAttachmentSemantics(input: {
 
   const expectedDecider =
     managementEscalationTriggers.length > 0
-      ? "Superintendent first; escalate to President/DP only if escalation triggers below apply"
-      : "Chief Engineer / Superintendent (technical); President only if escalation triggers apply";
+      ? "まず Technical Superintendent。Escalation条件に該当する場合のみ President/DP"
+      : "本船 C/E・Master および Technical Superintendent（技術）。Escalation条件が無い限り President は不要";
 
   const proposedDecisionQuestion = {
     decisionRequiredNow:
       input.explicitDecisionQuestion?.trim() ||
       (caseTypeHint === "TECHNICAL"
-        ? "What company-side technical confirmation or management approval is required now regarding continued operation, temporary measures, repair plan, and any shore-side support?"
-        : "What decision is required now from shore, who should decide it, and what can wait for execution / closure?"),
+        ? "継続運転の可否、一時措置の妥当性、修理計画、岸側支援について、いま会社側で必要な技術確認または経営承認は何か？"
+        : "いま岸側で決めるべきことは何か。誰が決め、何を実行・クローズに委ねるか？"),
     expectedDecider,
     deferredToExecutionOrClosure: [
-      "Detailed repair workmanship and onboard execution steps (once method is agreed)",
-      "Routine documentation filing after technical confirmation",
+      "修理方法合意後の詳細施工・本船実施手順",
+      "技術確認後の定型書類整理",
       ...(managementEscalationTriggers.length === 0
-        ? ["President-level approval unless cost, interruption, or owner confirmation arises"]
+        ? ["費用・運航停止・Owner承認が無い限りの President 承認"]
         : []),
     ],
   };
@@ -418,54 +418,48 @@ export function synthesizeAttachmentSemantics(input: {
   const missingInformation: Omit<FactItem, "id" | "classification">[] = [];
   if (!coveredTopics.includes("operational_status")) {
     missingInformation.push(
-      idLessFact(
-        "Confirm whether the affected equipment remains safe/available for operation.",
-        {
-          who: "Chief Engineer / Superintendent",
-          what: "Current operational status / test result",
-          evidenceRequired: "Technical confirmation from vessel or Superintendent",
-        },
-      ),
+      idLessFact("対象機器の現在の安全な使用可否を確認する。", {
+        who: "C/E / Technical Superintendent",
+        what: "現在の運航・使用可否 / 試験結果",
+        evidenceRequired: "本船または Superintendent の技術確認",
+      }),
     );
   }
   if (!coveredTopics.includes("temporary_measures") && caseTypeHint === "TECHNICAL") {
     missingInformation.push(
-      idLessFact("Confirm temporary isolation / contingency measures in force now.", {
-        who: "Chief Engineer",
-        what: "Temporary measures currently applied",
-        evidenceRequired: "Vessel report or updated trouble-report fields",
+      idLessFact("現在実施中の一時隔離・応急措置を確認する。", {
+        who: "C/E",
+        what: "実施中の一時措置",
+        evidenceRequired: "本船報告または Trouble Report 更新欄",
       }),
     );
   }
   if (!coveredTopics.includes("repair_parts")) {
     missingInformation.push(
-      idLessFact("Confirm repair method, parts status, and expected completion timing.", {
-        who: "Superintendent / Chief Engineer",
-        what: "Repair plan and parts ETA",
-        evidenceRequired: "Repair/parts plan",
+      idLessFact("修理方法・部品状況・完了見込みを確認する。", {
+        who: "Technical Superintendent / C/E",
+        what: "修理計画と部品 ETA",
+        evidenceRequired: "修理・部品計画",
       }),
     );
   }
   if (!coveredTopics.includes("class_flag_notification")) {
     missingInformation.push(
-      idLessFact(
-        "Confirm whether Class / Flag / owner notification is required or already completed.",
-        {
-          who: "Superintendent / DPA",
-          what: "Notification requirement and status",
-          evidenceRequired: "Notification record or reasoned N/A",
-        },
-      ),
+      idLessFact("Class / Flag / Owner への通知要否と実施状況を確認する。", {
+        who: "Technical Superintendent / DPA",
+        what: "通知要否と実施状況",
+        evidenceRequired: "通知記録または不要である理由",
+      }),
     );
   }
   if (managementEscalationTriggers.length > 0) {
     missingInformation.push(
       idLessFact(
-        "Confirm whether President/owner approval is required for cost, interruption, or company-level commitment.",
+        "費用・運航影響・Owner承認など、President/Owner 承認が必要かを確認する。",
         {
-          who: "Superintendent → President/DP",
-          what: "Escalation necessity and decision package",
-          evidenceRequired: "Cost / impact / owner-requirement summary",
+          who: "Technical Superintendent → President/DP",
+          what: "Escalation 要否と判断材料",
+          evidenceRequired: "費用 / 影響 / Owner要件の要約",
         },
       ),
     );
@@ -473,11 +467,11 @@ export function synthesizeAttachmentSemantics(input: {
   if (missingInformation.length === 0 && hasMaterialAttachmentText) {
     missingInformation.push(
       idLessFact(
-        "Human verification that attachment-sourced Reported facts match current onboard reality.",
+        "添付由来の Reported 事実が、現在の本船実態と一致するか人確認する。",
         {
-          who: "Superintendent",
-          what: "Confirm or correct Reported facts",
-          evidenceRequired: "Human review of Brief facts vs vessel",
+          who: "Technical Superintendent",
+          what: "Reported 事実の確認または訂正",
+          evidenceRequired: "Brief 事実と本船状況の突合",
         },
       ),
     );
@@ -486,96 +480,169 @@ export function synthesizeAttachmentSemantics(input: {
   const recommendationLines: string[] = [];
   if (caseTypeHint === "TECHNICAL" && hasMaterialAttachmentText) {
     recommendationLines.push(
-      "Superintendent to verify equipment availability and safety for continued operation against the trouble-report evidence.",
+      "Technical Superintendentが、Trouble Reportに照らして対象機器の現在の使用可否と継続運転の安全性を確認する。",
     );
     recommendationLines.push(
       coveredTopics.includes("temporary_measures")
-        ? "Confirm that temporary isolation / contingency measures described in the report remain in force and adequate."
-        : "Confirm temporary isolation / contingency measures currently applied onboard.",
+        ? "報告済みの一時隔離・応急措置が、いまも有効で十分かを確認する。"
+        : "本船で実施中の一時隔離・応急措置を確認する。",
     );
     if (coveredTopics.includes("contamination")) {
       recommendationLines.push(
-        "Confirm contamination extent and the fuel / tank handling plan (flushing, segregation, sampling as applicable).",
+        "燃料混入の範囲と、燃料／タンク処置（必要に応じフラッシング・分離・サンプリング）を確認する。",
       );
     }
     recommendationLines.push(
       coveredTopics.includes("repair_parts")
-        ? "Confirm repair method, parts readiness, and completion timing stated or implied in the evidence."
-        : "Define repair method, parts status, and completion timing.",
+        ? "証拠に示された修理方法・部品準備・完了時期を確認する。"
+        : "修理方法・部品状況・完了時期を定める。",
     );
     recommendationLines.push(
       coveredTopics.includes("class_flag_notification")
-        ? "Confirm Class / Flag / owner notification status already referenced in evidence."
-        : "Confirm whether Class / Flag / owner notification is required.",
+        ? "証拠に言及のある Class / Flag / Owner 通知の要否と実施状況を確認する。"
+        : "Class / Flag / Owner への通知要否を判断する。",
     );
     recommendationLines.push(
       managementEscalationTriggers.length > 0
-        ? `Escalate to President/DP only if: ${managementEscalationTriggers.join("; ")}.`
-        : "Escalate to President only if operational interruption, significant cost, owner approval, or company-level confirmation becomes required.",
+        ? `次の場合のみ President/DP へ Escalate する：${managementEscalationTriggers.join("；")}。`
+        : "運航停止、大きな費用、Owner承認、会社レベルの判断が必要な場合のみ President/DP へ Escalate する。",
     );
   } else if (hasMaterialAttachmentText) {
     recommendationLines.push(
-      "Review attachment-sourced Reported facts against the email narrative, confirm what is operationally true, and escalate only what requires management confirmation.",
+      "添付由来の Reported 事実をメール本文と突合し、運航上の事実を確認したうえで、経営判断が必要な事項だけ Escalate する。",
     );
   } else {
     recommendationLines.push(
-      "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
+      "事実を整理し、不足情報を特定し、判断権限を割り当てる。経営確認が必要な事項に限って President Decision を準備する。",
     );
   }
 
   const established: string[] = [];
   if (hasMaterialAttachmentText) {
     established.push(
-      "Attachment text was ingested with sheet/source boundaries and yields material Reported facts.",
+      "添付テキストをシート／出典境界付きで取り込み、判断材料となる Reported 事実が得られている",
     );
   }
   if (coveredTopics.includes("equipment_identity")) {
-    established.push("Evidence identifies affected equipment / system (unverified).");
+    established.push("対象機器・系統が証拠上特定されている（未検証）");
   }
   if (coveredTopics.includes("defect_reported")) {
-    established.push("Evidence reports a defect / failure condition (unverified).");
+    established.push("不具合／故障の報告がある（未検証）");
   }
   if (contaminationDamage) {
-    established.push(contaminationDamage);
+    established.push(
+      "燃料／油の混入またはタンク・系統への影響が報告されている（範囲は未確定）",
+    );
   }
   if (temporaryMeasures.length > 0) {
-    established.push(temporaryMeasures[0]!);
+    established.push(
+      "一時措置・隔離・応急対応の記載がある（詳細は Reported のまま）",
+    );
   }
 
-  const readiness: DecisionReadiness = "NOT_READY";
-  const why = [
-    established.length > 0
-      ? `Already in evidence (Reported but Unverified): ${established.join(" ")}`
-      : "Insufficient structured attachment evidence for a management decision.",
-    unresolvedTechnicalQuestions.length > 0
-      ? `Still unresolved: ${unresolvedTechnicalQuestions.join(" ")}`
-      : "Primary technical unknowns appear addressed in Reported evidence pending human verification.",
-    `Readiness is ${readiness} because attachment-sourced facts are not auto-confirmed and remaining confirmations/escalation checks are open.`,
-  ].join(" ");
+  // Pre-Gate proposal: CONDITIONAL when material attachment evidence exists.
+  // Final badge/text ownership remains Quality Gate (applyGateToBrief).
+  const readiness: DecisionReadiness = hasMaterialAttachmentText
+    ? "CONDITIONAL"
+    : "NOT_READY";
+
+  const whyParts: string[] = [];
+  if (established.length > 0) {
+    whyParts.push(`添付等から把握できている点：${established.join("。")}。`);
+  } else {
+    whyParts.push("経営判断に足る添付証拠が不足している。");
+  }
+  if (unresolvedTechnicalQuestions.length > 0) {
+    whyParts.push(
+      `未確認の点：${unresolvedTechnicalQuestions
+        .map((q) =>
+          q
+            .replace(
+              "Current safe availability / operational status of the affected equipment is not clearly established.",
+              "対象機器の現在の安全な使用可否が明確でない",
+            )
+            .replace(
+              "Contamination / damage extent and recovery handling plan need explicit confirmation.",
+              "混入・損傷の範囲と燃料処置計画の明示確認が必要",
+            )
+            .replace(
+              "Repair method, parts readiness, and completion timing are not clearly established.",
+              "修理方法・部品・完了時期が明確でない",
+            )
+            .replace(
+              "Whether Class / Flag notification is required or already done is not established.",
+              "Class / Flag 通知の要否または実施状況が未確定",
+            )
+            .replace(
+              "Temporary / contingency measures currently in force are not clearly established.",
+              "現在の一時措置・応急対応が明確でない",
+            ),
+        )
+        .join("。")}。`,
+    );
+  } else {
+    whyParts.push(
+      "主要な技術論点は Reported 証拠上おおむね揃っており、人による確認待ちである。",
+    );
+  }
+  // Do not embed a final readiness verdict here — Gate owns the last word.
+  const why = whyParts.join("");
 
   const presidentDecision =
     managementEscalationTriggers.length === 0
-      ? "President Decision: Not required at this stage if Superintendent / vessel can complete technical confirmation and execution. Escalate only if cost, operational interruption, owner approval, or company-level confirmation arises."
-      : `President Decision: Possibly required — escalation triggers indicated: ${managementEscalationTriggers.join("; ")}. Superintendent should package impact/cost/owner need before President confirmation.`;
+      ? "社長判断：現時点では不要（Technical Superintendent / 本船で技術確認と実施が可能な場合）。費用・運航停止・Owner承認・会社レベルの確認が必要になった場合のみ Escalate する。"
+      : `社長判断：必要になる可能性あり — Escalation 兆候：${managementEscalationTriggers.join("；")}。Technical Superintendent が影響・費用・Owner要件を整理してから President 確認に上げる。`;
 
-  const decisionAuthorities: Omit<DecisionAuthorityItem, "id">[] = [
-    {
-      roleLabel: "Technical confirmation / temporary measures / repair plan",
-      authority: "Other",
-      notes: "Chief Engineer / Superintendent",
-      status: "pending",
-    },
-    {
-      roleLabel: "Class / Flag / statutory notification (if required)",
-      authority: "Class/Flag",
-      status: "pending",
-    },
-    {
-      roleLabel: "Management approval (only if escalation triggers apply)",
-      authority: "President/DP",
-      status: "pending",
-    },
-  ];
+  const decisionAuthorities: Omit<DecisionAuthorityItem, "id">[] =
+    caseTypeHint === "TECHNICAL"
+      ? [
+          {
+            roleLabel: "技術状況の評価・一時技術措置・修理実施",
+            authority: "C/E",
+            notes: "Chief Engineer（機関・設備の技術判断と実施）",
+            status: "pending",
+          },
+          {
+            roleLabel: "本船運航・安全の統括確認",
+            authority: "Master",
+            notes: "運航継続可否・本船安全の最終統括",
+            status: "pending",
+          },
+          {
+            roleLabel: "岸側の技術確認・修理調整・部品・技術フォロー",
+            authority: "Superintendent",
+            notes: "Technical Superintendent",
+            status: "pending",
+          },
+          {
+            roleLabel: "Class / 法定の通知・受理（要否判断含む）",
+            authority: "Class",
+            notes: "必要時は Flag Administration も検討",
+            status: "pending",
+          },
+          {
+            roleLabel: "経営承認（Escalation 条件に該当する場合のみ）",
+            authority: "President/DP",
+            status:
+              managementEscalationTriggers.length > 0 ? "pending" : "not_required",
+            notes:
+              managementEscalationTriggers.length > 0
+                ? managementEscalationTriggers.join("；")
+                : "費用・運航停止・Owner承認等が無い限り不要",
+          },
+        ]
+      : [
+          {
+            roleLabel: "案件調整・事実確認",
+            authority: "Superintendent",
+            status: "pending",
+          },
+          {
+            roleLabel: "経営確認（必要な場合のみ）",
+            authority: "President/DP",
+            status: "pending",
+          },
+        ];
 
   const suggestedQuestionsToVessel = buildFilteredQuestions({
     caseType: caseTypeHint,
@@ -586,41 +653,56 @@ export function synthesizeAttachmentSemantics(input: {
 
   const nextActions: { text: string; owner: string }[] = [];
   nextActions.push({
-    text: "Superintendent: verify Reported attachment facts against current onboard status (do not treat extraction as confirmed).",
+    text: "Technical Superintendent：添付の Reported 事実を現在の本船状況と突合する（抽出＝確定としない）。",
     owner: "Superintendent",
   });
   if (!coveredTopics.includes("operational_status")) {
     nextActions.push({
-      text: "Confirm safe availability of affected equipment for continued operation.",
-      owner: "Chief Engineer / Superintendent",
+      text: "対象機器の継続運転に対する安全な使用可否を確認する。",
+      owner: "C/E / Superintendent",
+    });
+  } else if (coveredTopics.includes("temporary_measures")) {
+    nextActions.push({
+      text: "一時措置後の対象機器の現在の使用可否を確認する。",
+      owner: "C/E / Superintendent",
     });
   }
-  if (coveredTopics.includes("contamination")) {
+  if (
+    coveredTopics.includes("contamination") &&
+    !includesAny(fullBlob, [
+      "extent",
+      "quantity",
+      "cleared",
+      "cleaned",
+      "flushed",
+      "sampled",
+    ])
+  ) {
     nextActions.push({
-      text: "Confirm contamination extent and fuel/tank handling plan.",
-      owner: "Chief Engineer / Superintendent",
+      text: "混入範囲と燃料／タンク処置の現状を確認する。",
+      owner: "C/E / Superintendent",
     });
   }
   if (!coveredTopics.includes("class_flag_notification")) {
     nextActions.push({
-      text: "Decide and record Class / Flag / owner notification requirement.",
+      text: "Class / Flag / Owner 通知の要否を判断し記録する。",
       owner: "Superintendent / DPA",
     });
   }
   if (suggestedQuestionsToVessel.length > 0) {
     nextActions.push({
-      text: "Send only the remaining Suggested Questions to vessel/shore (skip items already answered in attachments), then register replies as Follow-up.",
+      text: "本船への確認事項のうち未解決分のみ送付し、返信は追加情報として登録する。",
       owner: "Case owner",
     });
   } else {
     nextActions.push({
-      text: "No major vessel questions remain from the standard checklist — close open Missing Information via Superintendent confirmation and re-analyze if needed.",
+      text: "定型の本船質問は残っていない。不足情報は Superintendent 確認で埋め、必要なら再解析する。",
       owner: "Case owner",
     });
   }
   if (managementEscalationTriggers.length > 0) {
     nextActions.push({
-      text: "If escalation triggers remain after technical check, prepare a concise President package (impact / cost / owner need).",
+      text: "技術確認後も Escalation 条件が残る場合、President 向けに影響・費用・Owner要件を短く整理する。",
       owner: "Superintendent",
     });
   }
@@ -640,7 +722,7 @@ export function synthesizeAttachmentSemantics(input: {
     managementEscalationTriggers,
     coveredTopics,
     proposedDecisionQuestion,
-    recommendation: recommendationLines.join(" "),
+    recommendation: recommendationLines.join(""),
     presidentDecision,
     why,
     decisionReadiness: readiness,
@@ -649,26 +731,68 @@ export function synthesizeAttachmentSemantics(input: {
     missingInformation,
     suggestedQuestionsToVessel,
     risks: [
-      "Treating attachment extraction as confirmed fact without human review",
-      "Silently reconciling conflicts between email narrative and attachments",
+      "添付抽出を人確認なしに確定事実として扱うこと",
+      "メールと添付の矛盾を黙って解消すること",
       ...(managementEscalationTriggers.length > 0
-        ? ["Delayed escalation when cost / interruption / owner approval is actually required"]
-        : ["Unnecessary President escalation for a pure technical execution matter"]),
+        ? ["費用・運航停止・Owner承認が必要なのに Escalate が遅れること"]
+        : ["純粋な技術実施案件に不要な President Escalate を行うこと"]),
     ],
     delegation: [
       {
-        assignee: "Superintendent",
-        task: "Own technical verification, shore support, and escalation gate to President.",
+        assignee: "Technical Superintendent",
+        task: "技術確認、岸側調整、President への Escalate 判断を担う。",
       },
       {
-        assignee: "Chief Engineer",
-        task: "Confirm operational status, temporary measures, and repair execution facts.",
+        assignee: "C/E",
+        task: "運航状況・一時措置・修理実施の事実を確認する。",
       },
     ],
     learningNotes: hasMaterialAttachmentText
-      ? `Attachment Semantic Analysis v0.2 applied (${units.length} evidence units; topics: ${coveredTopics.join(", ") || "none"}). Facts remain Reported but Unverified. Embedded image vision deferred.`
-      : "No material attachment text for semantic synthesis.",
+      ? `Attachment Semantic Analysis v0.2（証拠単位 ${units.length}、topics: ${coveredTopics.join(", ") || "none"}）。事実は Reported but Unverified。埋め込み画像の vision は deferred。`
+      : "意味合成に足る添付テキストなし。",
   };
+}
+
+function questionAlreadyAnswered(question: string, blob: string): boolean {
+  const q = question.toLowerCase();
+  // Do not suppress "current availability after temporary measures" style follow-ups.
+  const asksCurrentAvailability = /使用可否|available|availability|現在の/.test(
+    q,
+  );
+
+  if (
+    !asksCurrentAvailability &&
+    /一時措置|temporary|contingency/.test(q) &&
+    includesAny(blob, ["temporary", "contingency", "isolat", "一時"])
+  ) {
+    return true;
+  }
+  if (
+    /混入範囲|contaminat.*extent|extent.*contaminat|隔離完了/.test(q) &&
+    includesAny(blob, ["contamination", "contaminated", "vlsfo", "混入"]) &&
+    includesAny(blob, ["tank", "isolat", "service tank", "タンク", "隔離"])
+  ) {
+    return true;
+  }
+  if (
+    /^(?=.*原因)(?!.*確認).*$|what.*cause|suspected cause/.test(q) &&
+    includesAny(blob, ["defect", "defective", "failure", "cause", "不具合"])
+  ) {
+    return true;
+  }
+  if (
+    /修理完了|parts \/ repair|estimated parts/.test(q) &&
+    includesAny(blob, ["spare", "parts", "repair", "eta", "completion", "修理"])
+  ) {
+    return true;
+  }
+  if (
+    /class \/ 会社への通知|class \/ company notifications/.test(q) &&
+    includesAny(blob, ["class", "classnk", "flag", "notified", "notification"])
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function buildFilteredQuestions(input: {
@@ -682,15 +806,16 @@ function buildFilteredQuestions(input: {
 
   if (input.caseType === "TECHNICAL") {
     if (!covered.has("operational_status")) {
-      qs.push(
-        "Is the affected equipment currently usable / available for operation?",
-      );
+      qs.push("対象機器は現在、運航・使用可能な状態か？");
+    } else if (covered.has("temporary_measures")) {
+      // Evidence already describes measures — ask current post-measure status only.
+      qs.push("一時措置後の対象機器の現在の使用可否を確認してください。");
     }
     if (!covered.has("temporary_measures")) {
-      qs.push("What temporary / contingency measures are in place onboard now?");
+      qs.push("現在、本船で実施中の一時措置・応急対応は何か？");
     }
     if (!covered.has("repair_parts")) {
-      qs.push("What is the estimated parts / repair completion timing?");
+      qs.push("部品手配と修理完了の見込み時期は？");
     }
   }
 
@@ -698,52 +823,45 @@ function buildFilteredQuestions(input: {
     covered.has("contamination") ||
     includesAny(input.fullBlob, ["valve", "generator", "diesel", "vlsfo"])
   ) {
-    // Ask extent only if not already described with extent-like language
-    if (
-      !includesAny(input.fullBlob, [
-        "extent",
-        "quantity",
-        "litre",
-        "liter",
-        "cleared",
-        "cleaned",
-        "flushed",
-        "sampled",
-      ])
-    ) {
+    // Do not re-ask contamination/isolation if already materially present.
+    const contaminationAnswered =
+      covered.has("contamination") &&
+      includesAny(input.fullBlob, [
+        "tank",
+        "service tank",
+        "isolat",
+        "contaminat",
+        "vlsfo",
+      ]);
+    if (!contaminationAnswered) {
       qs.push(
-        "Please confirm contamination extent and whether DO service tank / FO system isolation is complete.",
+        "混入の範囲と、DOサービスタンク／FO系統の隔離完了状況を確認してください。",
       );
     }
     if (!covered.has("class_flag_notification")) {
-      qs.push(
-        "What Class / company notifications (if any) have already been made?",
-      );
+      qs.push("Class / 会社への通知は、すでに実施済みか（実施内容含む）？");
     }
   }
 
   if (input.caseType === "CREW_MANNING" && !covered.has("decision_owner_onboard")) {
-    qs.push("What is the latest embarkation / document readiness status?");
+    qs.push("最新の乗船・書類準備状況は？");
   }
   if (input.caseType === "FINANCE_COMMERCIAL") {
-    qs.push(
-      "Please confirm latest Ship Fund / pending expense figures and as-of date.",
-    );
+    qs.push("Ship Fund / 未払費用の最新値と基準日を確認してください。");
   }
 
   if (input.followUpCount === 0 && !covered.has("decision_owner_onboard")) {
     qs.push(
-      "Who onboard owns this issue now (Master / C/E / other), and what decision do you need from shore?",
+      "本船で本件を主担当しているのは誰か（Master / C/E / 他）。岸側に求める判断は何か？",
     );
   } else if (input.followUpCount > 0) {
-    qs.push(
-      "Please confirm any remaining open points after the latest follow-up (list unknowns only).",
-    );
+    qs.push("最新の追加情報のあと、未解決点だけを列挙してください。");
   }
 
   const seen = new Set<string>();
   const out: string[] = [];
   for (const q of qs) {
+    if (questionAlreadyAnswered(q, input.fullBlob)) continue;
     const key = q.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

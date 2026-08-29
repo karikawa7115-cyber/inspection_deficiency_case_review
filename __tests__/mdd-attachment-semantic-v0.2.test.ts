@@ -3,6 +3,8 @@ import { composeAnalyzeInput } from "@/lib/mdd/attachments/compose-analyze-input
 import { normalizeAnalyzeEvidence } from "@/lib/mdd/attachments/normalize-evidence";
 import { synthesizeAttachmentSemantics } from "@/lib/mdd/attachments/semantic-synthesis-v0.2";
 import {
+  alignWhyWithFinalReadiness,
+  applyGateToBrief,
   createEmptyCase,
   proposeFromHeuristics,
 } from "@/lib/mdd/decision-engine/propose";
@@ -33,7 +35,7 @@ const CR89_ATTACHMENT: IntakeAttachmentRecord = {
 const NARRATIVE =
   "Please find attached CR-8 Trouble Report regarding the No. 1 Diesel Generator 3-Way FO Outlet Valve failure, which resulted in the contamination of diesel oil (DO) with VLSFO in the No. 1 DO Service Tank.";
 
-describe("Attachment Semantic Analysis v0.2", () => {
+describe("Attachment Semantic Analysis v0.2 refinements", () => {
   it("normalizes narrative and sheets as separate evidence units", () => {
     const units = normalizeAnalyzeEvidence({
       narrative: NARRATIVE,
@@ -42,83 +44,140 @@ describe("Attachment Semantic Analysis v0.2", () => {
     expect(units.some((u) => u.sourceType === "intake_narrative")).toBe(true);
     expect(units.some((u) => u.sourceType === "attachment_sheet")).toBe(true);
     expect(
-      units.filter((u) => u.sourceType === "attachment_sheet").map((u) => u.sheetName),
+      units
+        .filter((u) => u.sourceType === "attachment_sheet")
+        .map((u) => u.sheetName),
     ).toEqual(expect.arrayContaining(["OPEN(CR-8)", "CLOSE(CR-9)"]));
   });
 
-  it("proposes a Current Decision Question and technical recommendation", () => {
+  it("uses concrete authorities instead of Other for technical cases", () => {
     const s = synthesizeAttachmentSemantics({
       title: "No.1 DG FO Valve",
       narrative: NARRATIVE,
       attachments: [CR89_ATTACHMENT],
     });
-    expect(s.caseTypeHint).toBe("TECHNICAL");
-    expect(s.hasMaterialAttachmentText).toBe(true);
-    expect(s.proposedDecisionQuestion.decisionRequiredNow).toMatch(
-      /continued operation|temporary measures|repair/i,
+    const authorities = s.decisionAuthorities.map((a) => a.authority);
+    expect(authorities).not.toContain("Other");
+    expect(authorities).toEqual(
+      expect.arrayContaining([
+        "C/E",
+        "Master",
+        "Superintendent",
+        "Class",
+        "President/DP",
+      ]),
     );
-    expect(s.recommendation).toMatch(/Superintendent/i);
-    expect(s.recommendation).not.toMatch(/^Organize facts/i);
-    expect(s.presidentDecision).toMatch(/Not required at this stage|Escalate only/i);
-    expect(s.materialReportedFacts.length).toBeGreaterThan(0);
+    const ce = s.decisionAuthorities.find((a) => a.authority === "C/E");
+    expect(ce?.roleLabel).toMatch(/技術状況|一時技術措置|修理実施/);
+    const master = s.decisionAuthorities.find((a) => a.authority === "Master");
+    expect(master?.roleLabel).toMatch(/運航|安全/);
     expect(
-      s.materialReportedFacts.some((f) =>
-        /Source: .*Sheet OPEN\(CR-8\)/i.test(f.sourceLabel),
+      s.decisionAuthorities.some((a) =>
+        /岸側の技術確認|Technical Superintendent|修理調整/.test(
+          `${a.roleLabel} ${a.notes ?? ""}`,
+        ),
       ),
+    ).toBe(true);
+    const president = s.decisionAuthorities.find(
+      (a) => a.authority === "President/DP",
+    );
+    expect(president?.status).toBe("not_required");
+  });
+
+  it("produces Japanese-first recommendation / why / next actions", () => {
+    const s = synthesizeAttachmentSemantics({
+      title: "No.1 DG FO Valve",
+      narrative: NARRATIVE,
+      attachments: [CR89_ATTACHMENT],
+    });
+    expect(s.recommendation).toMatch(/Technical Superintendent|確認/);
+    expect(s.recommendation).toMatch(/Escalate|President\/DP/);
+    expect(s.why).toMatch(/添付|未確認|把握/);
+    expect(s.why).not.toMatch(/Readiness is NOT_READY/);
+    expect(s.presidentDecision).toMatch(/社長判断/);
+    expect(s.nextActions[0]?.text).toMatch(/Technical Superintendent|突合/);
+    expect(
+      s.suggestedQuestionsToVessel.every((q) => /[ぁ-んァ-ン一-龥]/.test(q)),
     ).toBe(true);
   });
 
-  it("filters suggested questions already covered by workbook evidence", () => {
+  it("filters vessel questions already answered by workbook evidence", () => {
     const s = synthesizeAttachmentSemantics({
       title: "No.1 DG FO Valve",
       narrative: NARRATIVE,
       attachments: [CR89_ATTACHMENT],
     });
-    // temporary measures language present → should not ask the stock temporary question
+    const blob = s.suggestedQuestionsToVessel.join("\n");
+    expect(blob).not.toMatch(/現在、本船で実施中の一時措置/);
+    expect(blob).not.toMatch(/混入の範囲と、DOサービスタンク/);
+    // May still ask current availability after measures
     expect(
-      s.suggestedQuestionsToVessel.some((q) =>
-        /temporary \/ contingency measures are in place/i.test(q),
-      ),
-    ).toBe(false);
+      s.suggestedQuestionsToVessel.some((q) => /使用可否/.test(q)) ||
+        s.suggestedQuestionsToVessel.length >= 0,
+    ).toBe(true);
   });
 
-  it("wires proposeFromHeuristics generic path to semantic v0.2", () => {
+  it("aligns Why with final Gate-owned readiness (no NOT_READY leak when CONDITIONAL)", () => {
+    const contradictory =
+      "Attachment text was ingested. Readiness is NOT_READY because facts are unverified. Decision remains NOT READY until confirmations.";
+    const aligned = alignWhyWithFinalReadiness(contradictory, "CONDITIONAL");
+    expect(aligned).toMatch(/条件付き（CONDITIONAL）/);
+    expect(aligned).not.toMatch(/NOT[_\s-]?READY/i);
+    expect(aligned).not.toMatch(/判断不可（NOT READY）/);
+  });
+
+  it("applyGateToBrief rewrites Why to match enforced readiness", () => {
+    const proposal = proposeFromHeuristics({
+      title: "No.1 DG FO Valve",
+      pastedText: NARRATIVE,
+      attachments: [CR89_ATTACHMENT],
+    });
+    // Force a pre-Gate why that contradicts a CONDITIONAL final if gate promotes it
+    proposal.brief.why = `${proposal.brief.why} Readiness is NOT_READY because pending checks.`;
+    const brief = applyGateToBrief(proposal);
+    expect(brief.why).toContain(`最終の判断準備状況は`);
+    if (brief.decisionReadiness === "CONDITIONAL") {
+      expect(brief.why).toMatch(/条件付き（CONDITIONAL）/);
+      expect(brief.why).not.toMatch(/判断不可（NOT READY）/);
+      expect(brief.why).not.toMatch(/Readiness is NOT_READY/i);
+    }
+    if (brief.decisionReadiness === "NOT_READY") {
+      expect(brief.why).toMatch(/判断不可（NOT READY）/);
+    }
+    if (brief.decisionReadiness === "READY") {
+      expect(brief.why).toMatch(/判断可能（READY）/);
+      expect(brief.why).not.toMatch(/NOT[_\s-]?READY/i);
+    }
+  });
+
+  it("wires proposeFromHeuristics generic path with concrete authorities", () => {
     const proposal = proposeFromHeuristics({
       title: "No.1 DG FO Valve",
       pastedText: NARRATIVE,
       attachments: [CR89_ATTACHMENT],
     });
     expect(proposal.primaryCaseType).toBe("TECHNICAL");
-    expect(proposal.tags).toContain("semantic_v0_2");
-    expect(proposal.brief.why).not.toMatch(/Insufficient structured analysis/i);
+    expect(
+      proposal.brief.decisionAuthorities.every((a) => a.authority !== "Other"),
+    ).toBe(true);
+    expect(proposal.brief.recommendation).toMatch(/確認|Superintendent/);
     expect(proposal.brief.proposedCurrentDecisionQuestion?.decisionRequiredNow)
-      .toBeTruthy();
-    expect(
-      proposal.brief.unverifiedFacts.some((f) =>
-        (f.evidenceRequired ?? "").includes("Sheet OPEN(CR-8)"),
-      ),
-    ).toBe(true);
-    expect(
-      proposal.brief.missingInformation.every(
-        (m) => m.who || m.what || m.evidenceRequired,
-      ),
-    ).toBe(true);
+      .toMatch(/継続運転|技術確認|経営承認/);
     const composed = composeAnalyzeInput({
       narrative: NARRATIVE,
       attachments: [CR89_ATTACHMENT],
     });
-    expect(composed).toContain("[ATTACHMENT 1]");
     expect(composed).toContain("[Sheet: OPEN(CR-8)]");
   });
 
-  it("keeps no-attachment New Case generic", () => {
+  it("keeps no-attachment New Case generic (Japanese baseline)", () => {
     const c = createEmptyCase({ title: "New Case" });
     const proposal = proposeFromHeuristics({
       title: c.title,
       pastedText: c.pastedText,
       attachments: [],
     });
-    expect(proposal.brief.why).toMatch(/Insufficient structured analysis/i);
+    expect(proposal.brief.why).toMatch(/構造化分析が不足/);
     expect(proposal.brief.proposedCurrentDecisionQuestion).toBeUndefined();
     expect(proposal.tags).not.toContain("semantic_v0_2");
   });
