@@ -1,16 +1,12 @@
 import { Badge } from "@/components/ui/badge";
 import type { CaseStatus, DecisionReadiness } from "@/lib/mdd/types";
+import {
+  CASE_STATUS_LABEL_JA,
+  READINESS_LABEL_JA,
+} from "@/lib/mdd/ui-labels-ja";
 
-/** Official Case Status labels (Design Package v1.1) — display exactly. */
-export const CASE_STATUS_LABEL: Record<CaseStatus, string> = {
-  NEW: "NEW",
-  ANALYZING: "ANALYZING",
-  WAITING_FOR_INFORMATION: "WAITING_FOR_INFORMATION",
-  DECISION_REQUIRED: "DECISION_REQUIRED",
-  ACTION_IN_PROGRESS: "ACTION_IN_PROGRESS",
-  MONITORING: "MONITORING",
-  CLOSED: "CLOSED",
-};
+/** Official Case Status — canonical enum preserved; Japanese display. */
+export const CASE_STATUS_LABEL: Record<CaseStatus, string> = CASE_STATUS_LABEL_JA;
 
 export function CaseStatusBadge({ status }: { status: CaseStatus }) {
   const label = CASE_STATUS_LABEL[status];
@@ -40,13 +36,14 @@ export function ReadinessBadge({
 }: {
   readiness: DecisionReadiness;
 }) {
+  const label = READINESS_LABEL_JA[readiness];
   if (readiness === "READY") {
-    return <Badge variant="success">READY</Badge>;
+    return <Badge variant="success">{label}</Badge>;
   }
   if (readiness === "CONDITIONAL") {
-    return <Badge variant="warning">CONDITIONAL</Badge>;
+    return <Badge variant="warning">{label}</Badge>;
   }
-  return <Badge variant="destructive">NOT_READY</Badge>;
+  return <Badge variant="destructive">{label}</Badge>;
 }
 
 export function ReviewCandidateBadge({ on }: { on: boolean }) {

@@ -13,8 +13,8 @@ import type {
 } from "../types";
 import {
   composeAnalyzeInput,
-  extractUnverifiedFactCandidates,
 } from "../attachments/compose-analyze-input";
+import { synthesizeAttachmentSemantics } from "../attachments/semantic-synthesis-v0.2";
 import {
   evaluateQualityGateV1_1,
   subjectFromProposal,
@@ -620,46 +620,24 @@ function proposeGeneric(input: {
     followUps,
   });
 
-  const attachmentFacts = extractUnverifiedFactCandidates(extractedAttachments);
-  const unverifiedFacts: FactItem[] = attachmentFacts.map((c) =>
-    fact("unverified", c.text, {
-      evidenceRequired: c.sourceLabel,
-    }),
-  );
+  const useSemanticV02 =
+    extractedAttachments.length > 0 || followUps.length > 0;
 
-  for (const a of previewOnly) {
-    unverifiedFacts.push(
-      fact(
-        "unverified",
-        `Attachment present without semantic extraction: ${a.fileName} (${a.extractionNote ?? "PREVIEW_ONLY"})`,
-        { evidenceRequired: `Source: ${a.fileName}` },
-      ),
-    );
-  }
-  for (const a of failed) {
-    unverifiedFacts.push(
-      fact(
-        "unverified",
-        `Attachment extraction failed: ${a.fileName} — do not invent its contents. (${a.extractionNote ?? "FAILED"})`,
-        { evidenceRequired: `Source: ${a.fileName}` },
-      ),
-    );
+  if (useSemanticV02) {
+    return proposeGenericWithAttachmentSemantics({
+      title: input.title,
+      vessel: input.vessel,
+      pastedText: input.pastedText,
+      attachments,
+      followUps,
+      extractedAttachments,
+      previewOnly,
+      failed,
+      analyzeInput,
+    });
   }
 
-  followUps.forEach((fu, i) => {
-    const label = fu.authorLabel?.trim()
-      ? `Follow-up ${i + 1} (${fu.authorLabel.trim()})`
-      : `Follow-up ${i + 1}`;
-    const snippet = fu.text.trim().slice(0, 220);
-    if (snippet) {
-      unverifiedFacts.push(
-        fact("unverified", `${snippet}${fu.text.trim().length > 220 ? "…" : ""}`, {
-          evidenceRequired: `Source: ${label}`,
-        }),
-      );
-    }
-  });
-
+  // No-attachment path — unchanged baseline behaviour.
   const hasNarrative = input.pastedText.trim().length > 0;
   const confirmedFacts: FactItem[] = [];
   if (hasNarrative) {
@@ -667,22 +645,6 @@ function proposeGeneric(input: {
       fact(
         "confirmed",
         "User-pasted intake text is present (content not yet verified as operational fact).",
-      ),
-    );
-  }
-  if (extractedAttachments.length > 0) {
-    confirmedFacts.push(
-      fact(
-        "confirmed",
-        `${extractedAttachments.length} attachment(s) yielded extractable text; lines below are Reported but Unverified until human confirmation.`,
-      ),
-    );
-  }
-  if (followUps.length > 0) {
-    confirmedFacts.push(
-      fact(
-        "confirmed",
-        `${followUps.length} follow-up(s) included in Analyze input (Reported but Unverified until human confirmation).`,
       ),
     );
   }
@@ -698,8 +660,203 @@ function proposeGeneric(input: {
       },
     ),
   ];
-  if (attachments.length > 0 && extractedAttachments.length === 0) {
-    missingInformation.push(
+
+  const type: CaseType = inferGenericCaseType(
+    `${input.title}\n${input.pastedText}`,
+  );
+
+  return {
+    primaryCaseType: type,
+    tags: [
+      ...(input.vessel
+        ? [input.vessel.toLowerCase().replace(/\s+/g, "_")]
+        : []),
+      type === "TECHNICAL"
+        ? "technical"
+        : type === "INSPECTION_COMPLIANCE"
+          ? "inspection_compliance"
+          : type === "FINANCE_COMMERCIAL"
+            ? "finance"
+            : "operational",
+    ],
+    brief: {
+      ...baseBrief({
+        recommendation:
+          "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
+        decisionReadiness: "NOT_READY",
+        decisionAuthorities: [
+          auth("Case coordination", "Other"),
+          auth("Final management confirmation if required", "President/DP"),
+        ],
+        presidentDecision:
+          "President Decision: Not required at this stage — pending structured facts.",
+        why: "Insufficient structured analysis for a management decision.",
+        confirmedFacts,
+        unverifiedFacts: [],
+        assumptions: [],
+        missingInformation,
+        risks: ["Acting on unstructured intake"],
+        options: [],
+        delegation: [
+          {
+            id: id("del"),
+            assignee: "Case coordinator",
+            task: "Structure facts and identify decision owner(s).",
+          },
+        ],
+        learning: learning({}),
+        nextActions: [
+          {
+            id: id("act"),
+            text: "Complete structured fact entry and re-analyze.",
+            owner: "Case owner",
+            status: "open",
+          },
+        ],
+      }),
+    },
+  };
+}
+
+function proposeGenericWithAttachmentSemantics(input: {
+  title: string;
+  vessel?: string;
+  pastedText: string;
+  attachments: IntakeAttachmentRecord[];
+  followUps: CaseFollowUp[];
+  extractedAttachments: IntakeAttachmentRecord[];
+  previewOnly: IntakeAttachmentRecord[];
+  failed: IntakeAttachmentRecord[];
+  analyzeInput: string;
+}): AnalyzeProposal {
+  const synthesis = synthesizeAttachmentSemantics({
+    title: input.title,
+    vessel: input.vessel,
+    narrative: input.pastedText,
+    attachments: input.attachments,
+    followUps: input.followUps,
+  });
+
+  const unverifiedFacts: FactItem[] = synthesis.materialReportedFacts.map((c) =>
+    fact("unverified", c.text, {
+      evidenceRequired: c.sourceLabel,
+    }),
+  );
+
+  for (const a of input.previewOnly) {
+    unverifiedFacts.push(
+      fact(
+        "unverified",
+        `Attachment present without semantic extraction: ${a.fileName} (${a.extractionNote ?? "PREVIEW_ONLY"})`,
+        { evidenceRequired: `Source: ${a.fileName}` },
+      ),
+    );
+  }
+  for (const a of input.failed) {
+    unverifiedFacts.push(
+      fact(
+        "unverified",
+        `Attachment extraction failed: ${a.fileName} — do not invent its contents. (${a.extractionNote ?? "FAILED"})`,
+        { evidenceRequired: `Source: ${a.fileName}` },
+      ),
+    );
+  }
+
+  if (synthesis.operationalStatus) {
+    unverifiedFacts.push(
+      fact("unverified", synthesis.operationalStatus, {
+        evidenceRequired: "Source: synthesized from intake + attachments",
+      }),
+    );
+  }
+  if (synthesis.suspectedCause) {
+    unverifiedFacts.push(
+      fact("unverified", synthesis.suspectedCause, {
+        evidenceRequired: "Source: synthesized from intake + attachments",
+      }),
+    );
+  }
+  if (synthesis.contaminationDamage) {
+    unverifiedFacts.push(
+      fact("unverified", synthesis.contaminationDamage, {
+        evidenceRequired: "Source: synthesized from intake + attachments",
+      }),
+    );
+  }
+  for (const m of synthesis.temporaryMeasures) {
+    unverifiedFacts.push(
+      fact("unverified", m, {
+        evidenceRequired: "Source: synthesized from intake + attachments",
+      }),
+    );
+  }
+  if (synthesis.repairPartsStatus) {
+    unverifiedFacts.push(
+      fact("unverified", synthesis.repairPartsStatus, {
+        evidenceRequired: "Source: synthesized from intake + attachments",
+      }),
+    );
+  }
+  if (synthesis.notificationStatus) {
+    unverifiedFacts.push(
+      fact("unverified", synthesis.notificationStatus, {
+        evidenceRequired: "Source: synthesized from intake + attachments",
+      }),
+    );
+  }
+
+  input.followUps.forEach((fu, i) => {
+    const label = fu.authorLabel?.trim()
+      ? `Follow-up ${i + 1} (${fu.authorLabel.trim()})`
+      : `Follow-up ${i + 1}`;
+    const snippet = fu.text.trim().slice(0, 220);
+    if (snippet) {
+      unverifiedFacts.push(
+        fact("unverified", `${snippet}${fu.text.trim().length > 220 ? "…" : ""}`, {
+          evidenceRequired: `Source: ${label}`,
+        }),
+      );
+    }
+  });
+
+  const confirmedFacts: FactItem[] = [];
+  if (input.pastedText.trim().length > 0) {
+    confirmedFacts.push(
+      fact(
+        "confirmed",
+        "User-pasted intake text is present (content not yet verified as operational fact).",
+      ),
+    );
+  }
+  if (input.extractedAttachments.length > 0) {
+    confirmedFacts.push(
+      fact(
+        "confirmed",
+        `${input.extractedAttachments.length} attachment(s) yielded extractable text; line-level items below are Reported but Unverified until human confirmation.`,
+      ),
+    );
+  }
+  if (input.followUps.length > 0) {
+    confirmedFacts.push(
+      fact(
+        "confirmed",
+        `${input.followUps.length} follow-up(s) included in Analyze input (Reported but Unverified until human confirmation).`,
+      ),
+    );
+  }
+
+  const missingInformation: FactItem[] = synthesis.missingInformation.map((m) =>
+    fact("missing", m.text, {
+      who: m.who,
+      what: m.what,
+      evidenceRequired: m.evidenceRequired,
+    }),
+  );
+  if (
+    input.attachments.length > 0 &&
+    input.extractedAttachments.length === 0
+  ) {
+    missingInformation.unshift(
       fact(
         "missing",
         "Attached files did not yield usable text (FAILED or PREVIEW_ONLY). Re-supply text, a text-layer PDF, or spreadsheet — do not invent.",
@@ -712,18 +869,7 @@ function proposeGeneric(input: {
     );
   }
 
-  const type: CaseType = inferGenericCaseType(
-    `${input.title}\n${input.pastedText}\n${attachmentFacts.map((f) => f.text).join("\n")}\n${followUps.map((f) => f.text).join("\n")}`,
-  );
-
-  const suggestedQuestionsToVessel = buildSuggestedQuestionsToVessel({
-    caseType: type,
-    title: input.title,
-    pastedText: input.pastedText,
-    attachmentBlob: attachmentFacts.map((f) => f.text).join("\n"),
-    followUpCount: followUps.length,
-  });
-
+  const type = synthesis.caseTypeHint;
   const typeTag =
     type === "TECHNICAL"
       ? "technical"
@@ -733,6 +879,8 @@ function proposeGeneric(input: {
           ? "finance"
           : "operational";
 
+  const suggestedQuestionsToVessel = synthesis.suggestedQuestionsToVessel;
+
   return {
     primaryCaseType: type,
     tags: [
@@ -740,87 +888,52 @@ function proposeGeneric(input: {
         ? [input.vessel.toLowerCase().replace(/\s+/g, "_")]
         : []),
       typeTag,
-      ...(extractedAttachments.length > 0 ? ["attachment_sourced"] : []),
-      ...(followUps.length > 0 ? ["follow_up"] : []),
+      ...(input.extractedAttachments.length > 0 ? ["attachment_sourced"] : []),
+      ...(input.followUps.length > 0 ? ["follow_up"] : []),
+      "semantic_v0_2",
     ],
     brief: {
       ...baseBrief({
-        recommendation:
-          extractedAttachments.length > 0 || followUps.length > 0
-            ? "Review attachment- and follow-up-sourced Reported facts against the email narrative, confirm what is operationally true, identify contradictions without silently reconciling them, and escalate only what requires a President Decision."
-            : "Organize facts, identify missing information, assign decision authorities, and prepare a President Decision only for what requires management confirmation.",
-        decisionReadiness: "NOT_READY",
-        decisionAuthorities: [
-          auth("Case coordination", "Other"),
-          auth("Final management confirmation if required", "President/DP"),
-        ],
-        presidentDecision:
-          "President Decision: Not required at this stage — pending structured facts.",
-        why:
-          followUps.length > 0
-            ? "Follow-up material was added with explicit source boundaries, but content is not auto-confirmed. Human verification of Reported facts and the decision question is still required."
-            : extractedAttachments.length > 0
-              ? "Attachment text was ingested with explicit source boundaries, but attachment content is not auto-confirmed. Human verification of Reported facts and the decision question is still required."
-              : "Insufficient structured analysis for a management decision.",
+        recommendation: synthesis.recommendation,
+        decisionReadiness: synthesis.decisionReadiness,
+        decisionAuthorities: synthesis.decisionAuthorities.map((a) => ({
+          id: id("auth"),
+          ...a,
+        })),
+        presidentDecision: synthesis.presidentDecision,
+        why: synthesis.why,
         confirmedFacts,
         unverifiedFacts,
         assumptions: [],
         missingInformation,
-        risks: [
-          "Acting on unstructured intake",
-          ...(extractedAttachments.length > 0
-            ? [
-                "Treating attachment extraction as confirmed fact without human review",
-                "Silently reconciling conflicts between email narrative and attachments",
-              ]
-            : []),
-          ...(followUps.length > 0
-            ? [
-                "Treating follow-up replies as confirmed without human review",
-                "Silently reconciling conflicts across narrative, attachments, and follow-ups",
-              ]
-            : []),
-        ],
+        risks: synthesis.risks,
         options: [],
-        delegation: [
-          {
-            id: id("del"),
-            assignee: "Case coordinator",
-            task: "Structure facts and identify decision owner(s).",
-          },
-        ],
+        delegation: synthesis.delegation.map((d) => ({
+          id: id("del"),
+          ...d,
+        })),
         learning: learning({
           notes: [
-            attachments.length > 0 || followUps.length > 0
-              ? `Analyze input composed with source boundaries (${analyzeInput.length} chars). Attachment/follow-up lines are Reported but Unverified — not auto-confirmed.`
-              : undefined,
-            followUps.length > 0
-              ? `${followUps.length} follow-up(s) included.`
-              : undefined,
+            synthesis.learningNotes,
+            `Analyze input composed with source boundaries (${input.analyzeInput.length} chars).`,
           ]
             .filter(Boolean)
             .join(" "),
         }),
-        nextActions: [
-          {
-            id: id("act"),
-            text:
-              suggestedQuestionsToVessel.length > 0
-                ? "Send suggested questions to vessel/shore, paste replies as Follow-up, then re-analyze."
-                : extractedAttachments.length > 0
-                  ? "Confirm or reject attachment-sourced Reported facts, then re-analyze."
-                  : "Complete structured fact entry and re-analyze.",
-            owner: "Case owner",
-            status: "open",
-          },
-        ],
+        nextActions: synthesis.nextActions.map((a) => ({
+          id: id("act"),
+          text: a.text,
+          owner: a.owner,
+          status: "open" as const,
+        })),
       }),
       suggestedQuestionsToVessel,
+      proposedCurrentDecisionQuestion: synthesis.proposedDecisionQuestion,
     },
   };
 }
 
-/** UI chips only — questions to ask, not asserted facts. */
+/** UI chips only — questions to ask, not asserted facts. Kept for follow-up-only tests / legacy. */
 function buildSuggestedQuestionsToVessel(input: {
   caseType: CaseType;
   title: string;

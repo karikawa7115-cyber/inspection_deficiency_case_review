@@ -14,6 +14,7 @@ import {
   formatFileSize,
   guessMimeType,
   isSupportedAttachmentFileName,
+  listSheetNamesFromExtracted,
   newAttachmentId,
   SUPPORTED_ATTACHMENT_EXTENSIONS,
   toPersistedAttachment,
@@ -21,6 +22,7 @@ import {
   type IntakeAttachmentRecord,
   type IntakeAttachmentSession,
 } from "@/lib/mdd/attachments";
+import { EXTRACTION_STATUS_LABEL_JA, MDD_UI } from "@/lib/mdd/ui-labels-ja";
 import { cn } from "@/lib/utils";
 import { ChevronDown, FileText, Trash2, Upload } from "lucide-react";
 
@@ -58,7 +60,7 @@ export function MddIntakeAttachments({
   attachments,
   onChange,
   disabled,
-  title = "Attachments",
+  title = MDD_UI.attachments,
   compact = false,
 }: Props) {
   const inputId = useId();
@@ -160,22 +162,11 @@ export function MddIntakeAttachments({
     replaceAll(attachmentsRef.current.filter((a) => a.attachmentId !== id));
   }
 
-  const previewable = attachments.filter(
-    (a) =>
-      a.extractedContent.trim().length > 0 ||
-      a.extractionStatus === "PREVIEW_ONLY" ||
-      a.extractionStatus === "FAILED",
-  );
-
   return (
     <div className="flex flex-col gap-2">
       <Label>{title}</Label>
       {!compact ? (
-        <p className="text-muted-foreground text-xs">
-          Drag & drop or browse. Original files stay in this browser session only;
-          after refresh, re-attach binaries if needed (extracted text is kept when
-          saved).
-        </p>
+        <p className="text-muted-foreground text-xs">{MDD_UI.attachmentsHelp}</p>
       ) : null}
 
       <div
@@ -207,10 +198,8 @@ export function MddIntakeAttachments({
         }}
       >
         <Upload className="text-muted-foreground size-5" />
-        <p className="text-sm">Drag files here or click to browse</p>
-        <p className="text-muted-foreground text-xs">
-          PDF, DOCX, XLSX/XLS, CSV, TXT/MD, JPG/PNG/WEBP
-        </p>
+        <p className="text-sm">{MDD_UI.dropHint}</p>
+        <p className="text-muted-foreground text-xs">{MDD_UI.dropFormats}</p>
         <Button
           type="button"
           variant="outline"
@@ -218,7 +207,7 @@ export function MddIntakeAttachments({
           disabled={disabled}
           onClick={() => inputRef.current?.click()}
         >
-          Browse files
+          {MDD_UI.browseFiles}
         </Button>
         <input
           ref={inputRef}
@@ -241,96 +230,109 @@ export function MddIntakeAttachments({
         <ul className="flex flex-col gap-2">
           {attachments.map((a) => {
             const previewUrl = previewUrls[a.attachmentId];
+            const sheets = listSheetNamesFromExtracted(a.extractedContent);
+            const canInspect =
+              a.extractedContent.trim().length > 0 ||
+              a.extractionStatus === "PREVIEW_ONLY" ||
+              a.extractionStatus === "FAILED";
             return (
               <li
                 key={a.attachmentId}
-                className="flex items-start gap-3 rounded-md border px-3 py-2"
+                className="flex flex-col gap-2 rounded-md border px-3 py-2"
               >
-                {previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- session blob thumbnail
-                  <img
-                    src={previewUrl}
-                    alt=""
-                    className="size-10 rounded object-cover"
-                  />
-                ) : (
-                  <FileText className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-                )}
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <p className="truncate text-sm font-medium">{a.fileName}</p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" size="xs">
-                      {extensionLabel(a.fileName)}
-                    </Badge>
-                    <span className="text-muted-foreground text-xs">
-                      {formatFileSize(a.size)}
-                    </span>
-                    <Badge
-                      variant={statusVariant(a.extractionStatus)}
-                      size="xs"
-                    >
-                      {a.extractionStatus}
-                    </Badge>
+                <div className="flex items-start gap-3">
+                  {previewUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- session blob thumbnail
+                    <img
+                      src={previewUrl}
+                      alt=""
+                      className="size-10 rounded object-cover"
+                    />
+                  ) : (
+                    <FileText className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <p className="truncate text-sm font-medium">{a.fileName}</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline" size="xs">
+                        {extensionLabel(a.fileName)}
+                      </Badge>
+                      <span className="text-muted-foreground text-xs">
+                        {formatFileSize(a.size)}
+                      </span>
+                      <Badge
+                        variant={statusVariant(a.extractionStatus)}
+                        size="xs"
+                      >
+                        {EXTRACTION_STATUS_LABEL_JA[a.extractionStatus]}
+                      </Badge>
+                      {a.extractionStatus === "EXTRACTED" ? (
+                        <span className="text-muted-foreground text-xs">
+                          {a.extractedContent.length.toLocaleString()}{" "}
+                          {MDD_UI.charsExtracted}
+                        </span>
+                      ) : null}
+                    </div>
+                    {sheets.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="text-muted-foreground text-xs">
+                          {MDD_UI.sheets}:
+                        </span>
+                        {sheets.map((name) => (
+                          <Badge key={name} variant="outline" size="xs">
+                            {name}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : null}
+                    {a.extractionNote ? (
+                      <p className="text-muted-foreground text-xs">
+                        {a.extractionNote}
+                      </p>
+                    ) : null}
                   </div>
-                  {a.extractionNote ? (
-                    <p className="text-muted-foreground text-xs">
-                      {a.extractionNote}
-                    </p>
-                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={disabled || a.extractionStatus === "EXTRACTING"}
+                    aria-label={`Remove ${a.fileName}`}
+                    onClick={() => removeAttachment(a.attachmentId)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={disabled || a.extractionStatus === "EXTRACTING"}
-                  aria-label={`Remove ${a.fileName}`}
-                  onClick={() => removeAttachment(a.attachmentId)}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+
+                {canInspect ? (
+                  <Collapsible defaultOpen={a.extractionStatus === "EXTRACTED"}>
+                    <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between gap-2 py-1 text-left text-sm">
+                      <span>
+                        {a.extractionStatus === "EXTRACTED"
+                          ? MDD_UI.inspectExtracted
+                          : MDD_UI.extractionDetails}
+                      </span>
+                      <ChevronDown className="size-4 shrink-0" />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="bg-muted/30 mt-1 flex flex-col gap-1 rounded-md border p-3">
+                        {a.extractionStatus === "EXTRACTED" ? (
+                          <pre className="text-muted-foreground max-h-56 overflow-auto whitespace-pre-wrap font-mono text-xs">
+                            {a.extractedContent}
+                          </pre>
+                        ) : (
+                          <p className="text-muted-foreground text-xs">
+                            {a.extractionNote ??
+                              "No extractable text for this attachment."}
+                          </p>
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : null}
               </li>
             );
           })}
         </ul>
-      ) : null}
-
-      {previewable.length > 0 ? (
-        <Collapsible defaultOpen={false}>
-          <CollapsibleTrigger className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between gap-2 py-1 text-left text-sm">
-            <span>Extracted Attachment Content</span>
-            <ChevronDown className="size-4 shrink-0" />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="mt-2 flex flex-col gap-3">
-              {previewable.map((a) => (
-                <div
-                  key={`preview-${a.attachmentId}`}
-                  className="bg-muted/30 flex flex-col gap-1 rounded-md border p-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium">{a.fileName}</p>
-                    <Badge
-                      variant={statusVariant(a.extractionStatus)}
-                      size="xs"
-                    >
-                      {a.extractionStatus}
-                    </Badge>
-                  </div>
-                  {a.extractionStatus === "EXTRACTED" ? (
-                    <pre className="text-muted-foreground max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs">
-                      {a.extractedContent}
-                    </pre>
-                  ) : (
-                    <p className="text-muted-foreground text-xs">
-                      {a.extractionNote ??
-                        "No extractable text for this attachment."}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
       ) : null}
     </div>
   );

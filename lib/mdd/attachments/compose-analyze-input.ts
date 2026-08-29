@@ -63,6 +63,17 @@ export function truncateExtracted(text: string): string {
   return `${text.slice(0, MAX_EXTRACTED_CHARS)}\n\n[Truncated: extracted content exceeded ${MAX_EXTRACTED_CHARS} characters]`;
 }
 
+/** Sheet boundary labels from spreadsheet extraction (`[Sheet: Name]` lines). */
+export function listSheetNamesFromExtracted(content: string): string[] {
+  const names: string[] = [];
+  for (const rawLine of content.split(/\r?\n/)) {
+    const match = /^\[Sheet:\s*(.+)\]$/i.exec(rawLine.trim());
+    const name = match?.[1]?.trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 export function newAttachmentId(): string {
   return `att_${Math.random().toString(36).slice(2, 10)}`;
 }

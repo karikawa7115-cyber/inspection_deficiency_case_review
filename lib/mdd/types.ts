@@ -163,6 +163,15 @@ export type DecisionBrief = {
    * Not part of Structured Output Schema v1.0.
    */
   suggestedQuestionsToVessel?: string[];
+  /**
+   * UI-only Attachment Semantic Analysis v0.2 — proposed Current Decision Question.
+   * Not part of Structured Output Schema v1.0.
+   */
+  proposedCurrentDecisionQuestion?: {
+    decisionRequiredNow: string;
+    expectedDecider: string;
+    deferredToExecutionOrClosure?: string[];
+  };
 };
 
 /**

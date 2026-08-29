@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { MddIntakeAttachments } from "@/components/mdd/MddIntakeAttachments";
 import { newFollowUpId } from "@/lib/mdd/attachments";
 import type { CaseFollowUp, IntakeAttachmentRecord } from "@/lib/mdd/types";
+import { EXTRACTION_STATUS_LABEL_JA, MDD_UI } from "@/lib/mdd/ui-labels-ja";
 import { cn } from "@/lib/utils";
 
 /** Match Title / Vessel / Intake focus ring. */
@@ -68,11 +69,8 @@ export function MddFollowUpThread({
   return (
     <div className="flex flex-col gap-3 border-t pt-3">
       <div className="flex flex-col gap-0.5">
-        <p className="text-sm font-medium">Follow-up thread</p>
-        <p className="text-muted-foreground text-xs">
-          Add vessel / shore replies on this same case, then Re-analyze. Optional
-          author label; attachments allowed per follow-up.
-        </p>
+        <p className="text-sm font-medium">{MDD_UI.followUpThread}</p>
+        <p className="text-muted-foreground text-xs">{MDD_UI.followUpHelp}</p>
       </div>
 
       {followUps.length > 0 ? (
@@ -89,7 +87,7 @@ export function MddFollowUpThread({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="outline" size="xs">
-                      Follow-up {index + 1}
+                      追加情報 {index + 1}
                     </Badge>
                     {fu.authorLabel ? (
                       <Badge variant="secondary" size="xs">
@@ -107,11 +105,11 @@ export function MddFollowUpThread({
                     disabled={disabled}
                     onClick={() => onRemove(fu.followUpId)}
                   >
-                    Remove
+                    削除
                   </Button>
                 </div>
                 <p className="whitespace-pre-wrap text-sm">
-                  {fu.text || "(no text — attachment only)"}
+                  {fu.text || "（本文なし — 添付のみ）"}
                 </p>
                 {linked.length > 0 ? (
                   <ul className="flex flex-col gap-1">
@@ -120,7 +118,8 @@ export function MddFollowUpThread({
                         key={a.attachmentId}
                         className="text-muted-foreground text-xs"
                       >
-                        {a.fileName} · {a.extractionStatus}
+                        {a.fileName} ·{" "}
+                        {EXTRACTION_STATUS_LABEL_JA[a.extractionStatus]}
                       </li>
                     ))}
                   </ul>
@@ -130,40 +129,37 @@ export function MddFollowUpThread({
           })}
         </ul>
       ) : (
-        <p className="text-muted-foreground text-xs">
-          No follow-ups yet. After Analyze, paste the next reply here to continue
-          on this case.
-        </p>
+        <p className="text-muted-foreground text-xs">{MDD_UI.followUpEmpty}</p>
       )}
 
       <div className="flex flex-col gap-2 rounded-md border border-dashed p-3">
-        <p className="text-sm font-medium">Add follow-up</p>
+        <p className="text-sm font-medium">{MDD_UI.addFollowUp}</p>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="fu-author">Author (optional)</Label>
+          <Label htmlFor="fu-author">作成者（任意）</Label>
           <input
             id="fu-author"
             type="text"
             className={fieldClass("h-9 py-1")}
-            placeholder="Master / Superintendent / Phone note…"
+            placeholder="Master / Superintendent / 電話メモ…"
             value={authorLabel}
             disabled={disabled}
             onChange={(e) => setAuthorLabel(e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="fu-text">Reply / note</Label>
+          <Label htmlFor="fu-text">返信・メモ</Label>
           <textarea
             id="fu-text"
             rows={4}
             className={fieldClass("min-h-24 resize-y py-2")}
-            placeholder="Paste vessel or shore reply…"
+            placeholder="本船・岸側の返信を貼り付け…"
             value={text}
             disabled={disabled}
             onChange={(e) => setText(e.target.value)}
           />
         </div>
         <MddIntakeAttachments
-          title="Follow-up attachments"
+          title={MDD_UI.followUpAttachments}
           compact
           attachments={draftAttachments}
           disabled={disabled}
@@ -180,7 +176,7 @@ export function MddFollowUpThread({
           }
           onClick={handleAdd}
         >
-          Add follow-up
+          {MDD_UI.addFollowUp}
         </Button>
       </div>
     </div>

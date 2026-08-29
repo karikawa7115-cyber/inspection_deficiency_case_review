@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -32,6 +32,7 @@ import {
 } from "@/lib/mdd/decision-engine/propose";
 import { composeAnalyzeInput } from "@/lib/mdd/attachments";
 import { CASE_TYPES, type CaseStatus, type DecisionBrief, type DecisionReadiness, type IntakeAttachmentRecord, type MddCase } from "@/lib/mdd/types";
+import { CASE_TYPE_LABEL_JA, MDD_UI } from "@/lib/mdd/ui-labels-ja";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 
@@ -62,12 +63,14 @@ function intakeFieldClassName(extra?: string) {
 
 export function MddCaseWorkspace({ caseId }: { caseId: string }) {
   const [caseData, setCaseData] = useState<MddCase | null>(null);
+  const caseDataRef = useRef<MddCase | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editEssentials, setEditEssentials] = useState(false);
 
   const load = useCallback(async () => {
     const c = await localCaseRepository.get(caseId);
+    caseDataRef.current = c;
     setCaseData(c);
   }, [caseId]);
 
@@ -80,21 +83,42 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
       ...next,
       updatedAt: new Date().toISOString(),
     };
+    // Keep ref in sync before await so Analyze / blur cannot race on stale state.
+    caseDataRef.current = saved;
     await localCaseRepository.save(saved);
     setCaseData(saved);
   }
 
+  /** Functional update that always merges onto the latest case (incl. attachments). */
+  function patchCase(
+    updater: (prev: MddCase) => MddCase,
+    shouldPersist = true,
+  ) {
+    const prev = caseDataRef.current;
+    if (!prev) return;
+    const updated = updater(prev);
+    if (shouldPersist) {
+      void persist(updated);
+    } else {
+      caseDataRef.current = updated;
+      setCaseData(updated);
+    }
+  }
+
   async function runAnalyze() {
-    if (!caseData) return;
+    const latest = caseDataRef.current;
+    if (!latest) return;
     setBusy(true);
     setError(null);
     setEditEssentials(false);
     try {
-      await persist({ ...caseData, status: "ANALYZING" });
-      const attachments = caseData.attachments ?? [];
-      const followUps = caseData.followUps ?? [];
+      await persist({ ...latest, status: "ANALYZING" });
+      // Re-read after persist — attachment extract may have finished during ANALYZING.
+      const current = caseDataRef.current ?? latest;
+      const attachments = current.attachments ?? [];
+      const followUps = current.followUps ?? [];
       const analyzeInput = composeAnalyzeInput({
-        narrative: caseData.pastedText,
+        narrative: current.pastedText,
         attachments,
         followUps,
       });
@@ -103,13 +127,22 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         typeof window !== "undefined"
       ) {
         console.debug("[MDD Analyze input]", analyzeInput.slice(0, 2000));
+        console.debug("[MDD Analyze attachments]", {
+          count: attachments.length,
+          files: attachments.map((a) => ({
+            fileName: a.fileName,
+            status: a.extractionStatus,
+            chars: a.extractedContent.length,
+            sheets: a.extractedContent.match(/\[Sheet:[^\]]+\]/gi) ?? [],
+          })),
+        });
       }
       const proposal = proposeFromHeuristics({
-        title: caseData.title,
-        vessel: caseData.vessel,
-        pastedText: caseData.pastedText,
-        goldenCaseId: caseData.goldenCaseId,
-        financeSnapshot: caseData.financeSnapshot,
+        title: current.title,
+        vessel: current.vessel,
+        pastedText: current.pastedText,
+        goldenCaseId: current.goldenCaseId,
+        financeSnapshot: current.financeSnapshot,
         attachments,
         followUps,
       });
@@ -118,23 +151,29 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         tags: proposal.tags,
         brief: applyGateToBrief(proposal, {
           reviewCandidateFlag:
-            caseData.goldenCaseId === "GC03"
+            current.goldenCaseId === "GC03"
               ? true
-              : caseData.reviewCandidateFlag,
-          financeSnapshot: caseData.financeSnapshot,
+              : current.reviewCandidateFlag,
+          financeSnapshot: current.financeSnapshot,
         }),
       };
-      // Preserve UI-only Continuity fields across gate apply
+      // Preserve UI-only Continuity / Semantic v0.2 fields across gate apply
       data.brief.suggestedQuestionsToVessel =
         proposal.brief.suggestedQuestionsToVessel;
+      data.brief.proposedCurrentDecisionQuestion =
+        proposal.brief.proposedCurrentDecisionQuestion;
       const reviewFlag =
-        caseData.goldenCaseId === "GC03"
+        current.goldenCaseId === "GC03"
           ? true
-          : caseData.reviewCandidateFlag;
+          : current.reviewCandidateFlag;
       const nextStatus = statusAfterAnalysis(data.brief.decisionReadiness);
+      // Prefer latest attachments again so a late extract is not dropped.
+      const finalAttachments =
+        caseDataRef.current?.attachments ?? attachments;
+      const finalFollowUps = caseDataRef.current?.followUps ?? followUps;
       // Human confirmation flags reset on every Analyze / Re-analyze (Continuity §9.3)
       await persist({
-        ...caseData,
+        ...(caseDataRef.current ?? current),
         primaryCaseType: data.primaryCaseType,
         primaryCaseTypeConfirmed: false,
         tags: data.tags,
@@ -144,13 +183,14 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         presidentDecisionConfirmed: false,
         reviewCandidateFlag: reviewFlag,
         reviewCandidateConfirmed: false,
-        attachments,
-        followUps,
+        attachments: finalAttachments,
+        followUps: finalFollowUps,
         status: nextStatus,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Analyze failed");
-      if (caseData) await persist({ ...caseData, status: "NEW" });
+      const fallback = caseDataRef.current ?? latest;
+      await persist({ ...fallback, status: "NEW" });
     } finally {
       setBusy(false);
     }
@@ -164,31 +204,33 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
     Boolean(caseData?.reviewCandidateConfirmed);
 
   async function confirmAsProposed() {
-    if (!caseData?.brief) return;
-    const readiness = caseData.brief.decisionReadiness;
+    const current = caseDataRef.current;
+    if (!current?.brief) return;
+    const readiness = current.brief.decisionReadiness;
     const nextStatus =
       readiness === "NOT_READY" ? "WAITING_FOR_INFORMATION" : "ACTION_IN_PROGRESS";
     await persist({
-      ...caseData,
+      ...current,
       primaryCaseTypeConfirmed: true,
       tagsConfirmed: true,
       recommendationConfirmed: true,
       presidentDecisionConfirmed: true,
       reviewCandidateConfirmed: true,
-      contextPack: { ...caseData.contextPack, humanConfirmed: true },
+      contextPack: { ...current.contextPack, humanConfirmed: true },
       status: nextStatus,
     });
     setEditEssentials(false);
   }
 
   async function closeCase() {
-    if (!caseData) return;
+    const current = caseDataRef.current;
+    if (!current) return;
     // Review Candidate flag is intentionally preserved on close.
     await persist({
-      ...caseData,
+      ...current,
       status: "CLOSED",
       closedAt: new Date().toISOString(),
-      reviewCandidateFlag: caseData.reviewCandidateFlag,
+      reviewCandidateFlag: current.reviewCandidateFlag,
     });
   }
 
@@ -225,7 +267,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               "w-fit px-0",
             )}
           >
-            ← Cases
+            ← 案件一覧
           </Link>
           <h1 className="text-xl font-semibold">{caseData.title}</h1>
           <div className="flex flex-wrap gap-1.5">
@@ -238,14 +280,18 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button disabled={busy} onClick={() => void runAnalyze()}>
-            {busy ? "Analyzing…" : brief ? "Re-analyze" : "Analyze"}
+            {busy
+              ? MDD_UI.analyzing
+              : brief
+                ? MDD_UI.reanalyze
+                : MDD_UI.analyze}
           </Button>
           <Button
             variant="secondary"
             disabled={!essentialsConfirmed || caseData.status === "CLOSED"}
             onClick={() => void closeCase()}
           >
-            Close case
+            {MDD_UI.closeCase}
           </Button>
         </div>
       </div>
@@ -260,20 +306,31 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
           editEssentials={editEssentials}
           onToggleEdit={() => setEditEssentials((v) => !v)}
           onConfirm={() => void confirmAsProposed()}
-          onChange={setCaseData}
-          onPersist={(next) => void persist(next)}
+          onChange={(next) => {
+            caseDataRef.current = next;
+            setCaseData(next);
+          }}
+          onPersist={(next) => {
+            const base = caseDataRef.current ?? next;
+            void persist({
+              ...base,
+              ...next,
+              // Never drop attachments / follow-ups via essentials edits.
+              attachments: next.attachments ?? base.attachments,
+              followUps: next.followUps ?? base.followUps,
+            });
+          }}
         />
       ) : null}
 
       {essentialsConfirmed && brief ? (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm">
           <p className="font-medium text-emerald-900 dark:text-emerald-100">
-            Human-reviewed
+            {MDD_UI.humanReviewed}
           </p>
           <p className="text-muted-foreground mt-1 text-xs">
-            Case Type · Tags · Recommendation · President Decision · Review
-            Candidate — confirmed without per-field clicks (edits only if
-            changed).
+            案件種別 · タグ · 推奨対応 · 社長判断 · Review Candidate —
+            変更時のみ編集（個別クリック不要）。
           </p>
           {caseData.status === "CLOSED" && caseData.reviewCandidateFlag ? (
             <span className="mt-1 block text-xs">
@@ -286,49 +343,51 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
         <Card className="overflow-visible">
           <CardHeader>
-            <CardTitle>Case Intake</CardTitle>
-            <CardDescription>
-              This whole left panel is Case Intake. Enter Title and Vessel, then
-              type or paste the email into Intake / Email / Narrative (not into
-              this heading). Attach files if needed, then click Analyze (top
-              right).
-            </CardDescription>
+            <CardTitle>
+              {MDD_UI.caseIntake}
+              <span className="text-muted-foreground ml-2 text-sm font-normal">
+                / {MDD_UI.caseIntakeEn}
+              </span>
+            </CardTitle>
+            <CardDescription>{MDD_UI.caseIntakeHelp}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mdd-intake-title">Title</Label>
+              <Label htmlFor="mdd-intake-title">{MDD_UI.title}</Label>
               <input
                 id="mdd-intake-title"
                 type="text"
                 className={intakeFieldClassName("h-9 py-1")}
                 value={caseData.title}
-                onChange={(e) =>
-                  setCaseData({ ...caseData, title: e.target.value })
-                }
-                onBlur={(e) =>
-                  void persist({ ...caseData, title: e.target.value })
-                }
+                onChange={(e) => {
+                  const title = e.target.value;
+                  patchCase((prev) => ({ ...prev, title }), false);
+                }}
+                onBlur={(e) => {
+                  const title = e.target.value;
+                  patchCase((prev) => ({ ...prev, title }), true);
+                }}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mdd-intake-vessel">Vessel</Label>
+              <Label htmlFor="mdd-intake-vessel">{MDD_UI.vessel}</Label>
               <input
                 id="mdd-intake-vessel"
                 type="text"
                 className={intakeFieldClassName("h-9 py-1")}
                 value={caseData.vessel ?? ""}
-                onChange={(e) =>
-                  setCaseData({ ...caseData, vessel: e.target.value })
-                }
-                onBlur={(e) =>
-                  void persist({ ...caseData, vessel: e.target.value })
-                }
+                onChange={(e) => {
+                  const vessel = e.target.value;
+                  patchCase((prev) => ({ ...prev, vessel }), false);
+                }}
+                onBlur={(e) => {
+                  const vessel = e.target.value;
+                  patchCase((prev) => ({ ...prev, vessel }), true);
+                }}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="mdd-intake-narrative">
-                Intake / Email / Narrative
-              </Label>
+              <Label htmlFor="mdd-intake-narrative">{MDD_UI.narrative}</Label>
               {/*
                 Native textarea (not shadcn Textarea): avoid `display:flex` +
                 `field-sizing-content`, which collapse height to ~64px.
@@ -342,33 +401,32 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   "min-h-48 resize-y py-2 leading-relaxed",
                 )}
                 value={caseData.pastedText ?? ""}
-                placeholder="Paste vessel email / narrative here…"
-                onChange={(e) =>
-                  setCaseData({ ...caseData, pastedText: e.target.value })
-                }
-                onBlur={(e) =>
-                  void persist({ ...caseData, pastedText: e.target.value })
-                }
+                placeholder={MDD_UI.narrativePlaceholder}
+                onChange={(e) => {
+                  const pastedText = e.target.value;
+                  patchCase((prev) => ({ ...prev, pastedText }), false);
+                }}
+                onBlur={(e) => {
+                  const pastedText = e.target.value;
+                  patchCase((prev) => ({ ...prev, pastedText }), true);
+                }}
               />
             </div>
             <MddIntakeAttachments
               attachments={caseLevelAttachments}
               disabled={busy || caseData.status === "CLOSED"}
               onChange={(next: IntakeAttachmentRecord[]) => {
-                setCaseData((prev) => {
-                  if (!prev) return prev;
+                patchCase((prev) => {
                   const linked = (prev.attachments ?? []).filter((a) =>
                     (prev.followUps ?? []).some((f) =>
                       (f.attachmentIds ?? []).includes(a.attachmentId),
                     ),
                   );
-                  const updated = {
+                  return {
                     ...prev,
                     attachments: [...next, ...linked],
                   };
-                  void persist(updated);
-                  return updated;
-                });
+                }, true);
               }}
             />
             <MddFollowUpThread
@@ -376,28 +434,22 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               allAttachments={allAttachments}
               disabled={busy || caseData.status === "CLOSED"}
               onAdd={(followUp, newAttachments) => {
-                setCaseData((prev) => {
-                  if (!prev) return prev;
-                  const updated = {
-                    ...prev,
-                    followUps: [...(prev.followUps ?? []), followUp],
-                    attachments: [
-                      ...(prev.attachments ?? []),
-                      ...newAttachments,
-                    ],
-                  };
-                  void persist(updated);
-                  return updated;
-                });
+                patchCase((prev) => ({
+                  ...prev,
+                  followUps: [...(prev.followUps ?? []), followUp],
+                  attachments: [
+                    ...(prev.attachments ?? []),
+                    ...newAttachments,
+                  ],
+                }), true);
               }}
               onRemove={(followUpId) => {
-                setCaseData((prev) => {
-                  if (!prev) return prev;
+                patchCase((prev) => {
                   const target = (prev.followUps ?? []).find(
                     (f) => f.followUpId === followUpId,
                   );
                   const removeIds = new Set(target?.attachmentIds ?? []);
-                  const updated = {
+                  return {
                     ...prev,
                     followUps: (prev.followUps ?? []).filter(
                       (f) => f.followUpId !== followUpId,
@@ -406,9 +458,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                       (a) => !removeIds.has(a.attachmentId),
                     ),
                   };
-                  void persist(updated);
-                  return updated;
-                });
+                }, true);
               }}
             />
             {caseData.financeSnapshot ? (
@@ -439,11 +489,8 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
           {!brief ? (
             <Card>
               <CardHeader>
-                <CardTitle>Decision Brief</CardTitle>
-                <CardDescription>
-                  Run Analyze to prepare the Executive Decision for the
-                  President.
-                </CardDescription>
+                <CardTitle>{MDD_UI.decisionBrief}</CardTitle>
+                <CardDescription>{MDD_UI.decisionBriefEmpty}</CardDescription>
               </CardHeader>
             </Card>
           ) : (
@@ -451,22 +498,23 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               <Card className="border-primary/20">
                 <CardHeader>
                   <div className="flex flex-col gap-1">
-                    <CardTitle>Executive Decision</CardTitle>
-                    <CardDescription>
-                      Primary view for the President (~30 seconds). Order:
-                      Recommendation → President Decision → Readiness →
-                      Authorities → Why → Next Actions.
-                    </CardDescription>
+                    <CardTitle>
+                      {MDD_UI.executiveDecision}
+                      <span className="text-muted-foreground ml-2 text-sm font-normal">
+                        / {MDD_UI.executiveDecisionEn}
+                      </span>
+                    </CardTitle>
+                    <CardDescription>{MDD_UI.executiveHelp}</CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
                   {brief.qualityGate.criticalFailures.length > 0 ? (
                     <div className="border-destructive bg-destructive/10 rounded-md border-2 p-3 text-sm">
                       <p className="text-destructive font-semibold">
-                        Quality Gate — Critical failure
+                        {MDD_UI.qualityGateCritical}
                       </p>
                       <p className="text-muted-foreground mt-1 text-xs">
-                        READY is blocked until these are resolved.
+                        {MDD_UI.qualityGateBlocksReady}
                       </p>
                       <ul className="mt-2 list-disc pl-4">
                         {brief.qualityGate.criticalFailures.map((f) => (
@@ -478,10 +526,10 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   {brief.qualityGate.warnings.length > 0 ? (
                     <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
                       <p className="font-semibold text-amber-900 dark:text-amber-100">
-                        Quality Gate — Warning
+                        {MDD_UI.qualityGateWarning}
                       </p>
                       <p className="text-muted-foreground mt-1 text-xs">
-                        Does not by itself block READY.
+                        {MDD_UI.qualityGateDoesNotBlock}
                       </p>
                       <ul className="mt-2 list-disc pl-4">
                         {brief.qualityGate.warnings.map((f) => (
@@ -493,13 +541,49 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   {brief.qualityGate.criticalFailures.length === 0 &&
                   brief.qualityGate.warnings.length === 0 ? (
                     <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs">
-                      Quality Gate — no critical failures
+                      {MDD_UI.qualityGateOk}
                     </div>
+                  ) : null}
+
+                  {brief.proposedCurrentDecisionQuestion ? (
+                    <section className="bg-muted/30 flex flex-col gap-2 rounded-lg border p-3">
+                      <h3 className="text-sm font-semibold">
+                        {MDD_UI.currentDecisionQuestion}
+                        <span className="text-muted-foreground ml-2 text-xs font-normal">
+                          / {MDD_UI.currentDecisionQuestionEn}
+                        </span>
+                      </h3>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                        {
+                          brief.proposedCurrentDecisionQuestion
+                            .decisionRequiredNow
+                        }
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        {MDD_UI.expectedDecider}:{" "}
+                        {brief.proposedCurrentDecisionQuestion.expectedDecider}
+                      </p>
+                      {(brief.proposedCurrentDecisionQuestion
+                        .deferredToExecutionOrClosure?.length ?? 0) > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          <p className="text-muted-foreground text-xs font-medium">
+                            {MDD_UI.deferredItems}
+                          </p>
+                          <ul className="text-muted-foreground list-disc pl-4 text-xs">
+                            {brief.proposedCurrentDecisionQuestion.deferredToExecutionOrClosure!.map(
+                              (d) => (
+                                <li key={d}>{d}</li>
+                              ),
+                            )}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </section>
                   ) : null}
 
                   <section className="flex flex-col gap-1.5">
                     <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-                      1. Recommendation
+                      1. {MDD_UI.recommendation}
                     </h3>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">
                       {brief.recommendation}
@@ -508,7 +592,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
 
                   <section className="border-primary/40 bg-primary/5 flex flex-col gap-2 rounded-lg border-2 p-4">
                     <h3 className="text-sm font-semibold">
-                      2. President Decision
+                      2. {MDD_UI.presidentDecision}
                     </h3>
                     <p className="text-base leading-relaxed font-medium whitespace-pre-wrap">
                       {brief.presidentDecision}
@@ -517,7 +601,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
 
                   <section className="flex flex-col gap-1.5">
                     <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-                      3. Decision Readiness
+                      3. {MDD_UI.decisionReadiness}
                     </h3>
                     <div>
                       <ReadinessBadge readiness={brief.decisionReadiness} />
@@ -526,10 +610,10 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
 
                   <section className="flex flex-col gap-2">
                     <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-                      4. Decision Authorities
+                      4. {MDD_UI.decisionAuthorities}
                     </h3>
                     <p className="text-muted-foreground text-xs">
-                      Role → Authority (separate from President Decision)
+                      {MDD_UI.decisionAuthoritiesHelp}
                     </p>
                     <ul className="flex flex-col gap-1.5">
                       {brief.decisionAuthorities.map((a) => (
@@ -547,14 +631,14 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
 
                   <section className="flex flex-col gap-1.5">
                     <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-                      5. Why
+                      5. {MDD_UI.why}
                     </h3>
                     <p className="text-sm whitespace-pre-wrap">{brief.why}</p>
                   </section>
 
                   <section className="flex flex-col gap-1.5">
                     <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-                      6. Next Actions
+                      6. {MDD_UI.nextActions}
                     </h3>
                     <ul className="flex flex-col gap-1.5">
                       {brief.nextActions.map((a) => (
@@ -564,7 +648,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                         >
                           <span>{a.text}</span>
                           <span className="text-muted-foreground text-xs">
-                            Owner: {a.owner}
+                            担当: {a.owner}
                           </span>
                         </li>
                       ))}
@@ -579,15 +663,19 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                 </CardContent>
               </Card>
 
-              <DetailSection title="Decision Detail (optional)">
-                <FactGroup title="Confirmed Facts" items={brief.confirmedFacts} />
+              <DetailSection title={MDD_UI.decisionDetail}>
                 <FactGroup
-                  title="Reported but Unverified"
-                  items={brief.unverifiedFacts}
+                  title={MDD_UI.confirmedFacts}
+                  items={brief.confirmedFacts}
                 />
-                <FactGroup title="Assumptions" items={brief.assumptions} />
                 <FactGroup
-                  title="Missing Information"
+                  title={MDD_UI.reportedUnverified}
+                  items={brief.unverifiedFacts}
+                  showSource
+                />
+                <FactGroup title={MDD_UI.assumptions} items={brief.assumptions} />
+                <FactGroup
+                  title={MDD_UI.missingInformation}
                   items={brief.missingInformation}
                   showWho
                 />
@@ -597,7 +685,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   />
                 ) : null}
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">Risks</p>
+                  <p className="text-sm font-medium">{MDD_UI.risks}</p>
                   <ul className="list-disc pl-4 text-sm">
                     {brief.risks.map((r) => (
                       <li key={r}>{r}</li>
@@ -605,7 +693,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   </ul>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">Options</p>
+                  <p className="text-sm font-medium">{MDD_UI.options}</p>
                   <ul className="flex flex-col gap-1 text-sm">
                     {brief.options.map((o) => (
                       <li key={o.id} className="rounded-md border px-2 py-1">
@@ -616,7 +704,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                   </ul>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium">Delegation</p>
+                  <p className="text-sm font-medium">{MDD_UI.delegation}</p>
                   <ul className="list-disc pl-4 text-sm">
                     {brief.delegation.map((d) => (
                       <li key={d.id}>
@@ -628,7 +716,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                 </div>
               </DetailSection>
 
-              <DetailSection title="Management Learning (secondary)">
+              <DetailSection title={MDD_UI.managementLearning}>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <Flag label="CA" on={brief.learning.correctiveAction} />
                   <Flag label="PA" on={brief.learning.preventiveAction} />
@@ -684,36 +772,37 @@ function HumanConfirmationPanel({
   return (
     <Card className="border-destructive/30 bg-card">
       <CardHeader>
-        <CardTitle>Human review required</CardTitle>
-        <CardDescription>
-          One action marks all five essentials as human-reviewed. No per-field
-          clicks unless you need to change something.
-        </CardDescription>
+        <CardTitle>{MDD_UI.humanReviewRequired}</CardTitle>
+        <CardDescription>{MDD_UI.humanReviewHelp}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-muted-foreground text-xs">
-          Essentials to human-review: Case Type · Tags · Recommendation ·
-          President Decision · Review Candidate
+          人確認の必須項目：案件種別 · タグ · 推奨対応 · 社長判断 · Review
+          Candidate
         </p>
         <ol className="flex flex-col gap-2 text-sm">
           <ConfirmRow
             n={1}
-            label="Primary Case Type"
-            value={caseData.primaryCaseType ?? "(unset)"}
+            label="案件種別"
+            value={
+              caseData.primaryCaseType
+                ? CASE_TYPE_LABEL_JA[caseData.primaryCaseType]
+                : "(未設定)"
+            }
           />
           <ConfirmRow
             n={2}
-            label="Tags"
-            value={caseData.tags.join(", ") || "(none)"}
+            label="タグ"
+            value={caseData.tags.join(", ") || "(なし)"}
           />
           <ConfirmRow
             n={3}
-            label="Recommendation"
+            label={MDD_UI.recommendation}
             value={brief.recommendation}
           />
           <ConfirmRow
             n={4}
-            label="President Decision"
+            label={MDD_UI.presidentDecision}
             value={brief.presidentDecision}
             emphasize
           />
@@ -725,18 +814,16 @@ function HumanConfirmationPanel({
         </ol>
 
         <div className="flex flex-wrap gap-2">
-          <Button onClick={onConfirm}>
-            Mark all five as human-reviewed
-          </Button>
+          <Button onClick={onConfirm}>{MDD_UI.markAllReviewed}</Button>
           <Button variant="outline" onClick={onToggleEdit}>
-            {editEssentials ? "Hide edits" : "Edit essentials only"}
+            {editEssentials ? MDD_UI.hideEdits : MDD_UI.editEssentials}
           </Button>
         </div>
 
         {editEssentials ? (
           <div className="bg-muted/30 flex flex-col gap-3 rounded-md border p-3">
             <div className="flex flex-col gap-1.5">
-              <Label>Primary Case Type</Label>
+              <Label>案件種別</Label>
               <select
                 className="border-input bg-background h-9 rounded-md border px-3 text-sm"
                 value={caseData.primaryCaseType ?? ""}
@@ -749,16 +836,16 @@ function HumanConfirmationPanel({
                   })
                 }
               >
-                <option value="">(unset)</option>
+                <option value="">(未設定)</option>
                 {CASE_TYPES.map((t) => (
                   <option key={t} value={t}>
-                    {t}
+                    {CASE_TYPE_LABEL_JA[t]}
                   </option>
                 ))}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tags-edit">Tags</Label>
+              <Label htmlFor="tags-edit">タグ</Label>
               <Input
                 id="tags-edit"
                 className="bg-card"
@@ -784,7 +871,7 @@ function HumanConfirmationPanel({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rec-edit">Recommendation</Label>
+              <Label htmlFor="rec-edit">{MDD_UI.recommendation}</Label>
               <Textarea
                 id="rec-edit"
                 className="bg-card"
@@ -805,7 +892,7 @@ function HumanConfirmationPanel({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="pd-edit">President Decision</Label>
+              <Label htmlFor="pd-edit">{MDD_UI.presidentDecision}</Label>
               <Textarea
                 id="pd-edit"
                 className="bg-card"
@@ -911,11 +998,10 @@ function SuggestedQuestionsChips({ questions }: { questions: string[] }) {
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-        Suggested questions to vessel
+        {MDD_UI.suggestedQuestions}
       </h3>
       <p className="text-muted-foreground text-xs">
-        Click a chip to copy, then paste into email or Add follow-up when the
-        reply arrives.
+        {MDD_UI.suggestedQuestionsHelp}
       </p>
       <div className="flex flex-wrap gap-2">
         {questions.map((q) => (
@@ -927,7 +1013,7 @@ function SuggestedQuestionsChips({ questions }: { questions: string[] }) {
             className="h-auto max-w-full whitespace-normal px-2.5 py-1.5 text-left text-xs"
             onClick={() => void copyQuestion(q)}
           >
-            {copied === q ? "Copied" : q}
+            {copied === q ? "コピー済み" : q}
           </Button>
         ))}
       </div>
@@ -939,10 +1025,12 @@ function FactGroup({
   title,
   items,
   showWho,
+  showSource,
 }: {
   title: string;
   items: DecisionBrief["confirmedFacts"];
   showWho?: boolean;
+  showSource?: boolean;
 }) {
   if (items.length === 0) return null;
   return (
@@ -954,8 +1042,13 @@ function FactGroup({
             {f.text}
             {showWho && (f.who || f.what || f.evidenceRequired) ? (
               <p className="text-muted-foreground mt-1 text-xs">
-                Who: {f.who ?? "—"} · What: {f.what ?? "—"} · Evidence:{" "}
-                {f.evidenceRequired ?? "—"}
+                {MDD_UI.who}: {f.who ?? "—"} · {MDD_UI.what}: {f.what ?? "—"} ·{" "}
+                {MDD_UI.evidence}: {f.evidenceRequired ?? "—"}
+              </p>
+            ) : null}
+            {showSource && f.evidenceRequired && !showWho ? (
+              <p className="text-muted-foreground mt-1 text-xs">
+                {f.evidenceRequired}
               </p>
             ) : null}
           </li>

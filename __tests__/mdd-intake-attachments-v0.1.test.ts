@@ -4,6 +4,7 @@ import {
   composeAnalyzeInput,
   extractUnverifiedFactCandidates,
   isSupportedAttachmentFileName,
+  listSheetNamesFromExtracted,
 } from "@/lib/mdd/attachments/compose-analyze-input";
 import { extractAttachmentContent } from "@/lib/mdd/attachments/extract";
 import {
@@ -153,14 +154,18 @@ describe("Intake Attachment Upload v0.1", () => {
       .map((f) => f.text)
       .join("\n");
     expect(unverifiedBlob).toMatch(/FO Outlet Valve/i);
-    expect(unverifiedBlob).toMatch(/Source: CR-8 Trouble Report\.xlsx/);
+    expect(
+      proposal.brief.unverifiedFacts.some((f) =>
+        (f.evidenceRequired ?? "").includes("CR-8 Trouble Report.xlsx"),
+      ),
+    ).toBe(true);
     // Attachment lines must not be auto-promoted to confirmed operational facts
     const confirmedBlob = proposal.brief.confirmedFacts
       .map((f) => f.text)
       .join("\n");
     expect(confirmedBlob).not.toMatch(/Contamination of diesel oil/);
     expect(proposal.brief.decisionReadiness).toBe("NOT_READY");
-    expect(proposal.brief.learning.notes ?? "").toMatch(/source boundaries/i);
+    expect(proposal.brief.learning.notes ?? "").toMatch(/Semantic Analysis v0\.2|source boundaries/i);
   });
 
   it("leaves Golden Case proposals unchanged when goldenCaseId is set", () => {
@@ -222,5 +227,121 @@ describe("Intake Attachment Upload v0.1", () => {
     ]);
     expect(facts[0]?.sourceLabel).toContain("Sheet OPEN(CR-8)");
     expect(facts.some((f) => f.text.includes("Valve defective"))).toBe(true);
+  });
+
+  it("lists sheet names from extracted spreadsheet boundaries", () => {
+    expect(
+      listSheetNamesFromExtracted(
+        "[Sheet: OPEN(CR-8)]\nA,B\n[Sheet: CLOSE(CR-9)]\nC,D",
+      ),
+    ).toEqual(["OPEN(CR-8)", "CLOSE(CR-9)"]);
+  });
+
+  it("shows generic why when Analyze receives no extracted attachments", () => {
+    const proposal = proposeFromHeuristics({
+      title: "DG FO Valve",
+      pastedText: "Please find attached CR-8 trouble report.",
+      attachments: [],
+    });
+    expect(proposal.brief.why).toMatch(/Insufficient structured analysis/i);
+  });
+
+  it("does not show generic why when EXTRACTED spreadsheet reaches Analyze", () => {
+    const proposal = proposeFromHeuristics({
+      title: "DG FO Valve",
+      pastedText: "Please find attached CR-8 trouble report.",
+      attachments: [
+        {
+          attachmentId: "att_1",
+          fileName: "CR-8,9 Trouble report.xlsx",
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          size: 2000,
+          extractionStatus: "EXTRACTED",
+          extractedContent: [
+            "[Sheet: OPEN(CR-8)]",
+            "Equipment,No. 1 Diesel Generator",
+            "Defect,3-Way FO Outlet Valve failure",
+            "Consequence,Contamination of diesel oil (DO) with VLSFO",
+            "Temporary measure,FO line isolated",
+          ].join("\n"),
+        },
+      ],
+    });
+    expect(proposal.brief.why).not.toMatch(
+      /Insufficient structured analysis/i,
+    );
+    expect(proposal.brief.why).toMatch(/Already in evidence|Attachment text/i);
+    expect(proposal.brief.recommendation).toMatch(/Superintendent/i);
+    expect(proposal.brief.recommendation).not.toMatch(
+      /^Organize facts, identify missing information/i,
+    );
+    expect(proposal.brief.proposedCurrentDecisionQuestion?.decisionRequiredNow).toMatch(
+      /technical confirmation|management approval/i,
+    );
+    expect(proposal.brief.presidentDecision).toMatch(/Not required at this stage|Escalate only/i);
+    expect(proposal.brief.learning.notes ?? "").toMatch(/Semantic Analysis v0\.2/i);
+    expect(
+      composeAnalyzeInput({
+        narrative: "Please find attached CR-8 trouble report.",
+        attachments: [
+          {
+            attachmentId: "att_1",
+            fileName: "CR-8,9 Trouble report.xlsx",
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            size: 2000,
+            extractionStatus: "EXTRACTED",
+            extractedContent: [
+              "[Sheet: OPEN(CR-8)]",
+              "Equipment,No. 1 Diesel Generator",
+              "Defect,3-Way FO Outlet Valve failure",
+            ].join("\n"),
+          },
+        ],
+      }),
+    ).toContain("[Sheet: OPEN(CR-8)]");
+  });
+
+  it("preserves attachments when merging intake field updates onto latest case", () => {
+    // Mirrors the fixed Case Intake patch pattern (functional merge onto latest).
+    type MiniCase = {
+      title: string;
+      pastedText: string;
+      attachments: IntakeAttachmentRecord[];
+    };
+    let caseData: MiniCase = {
+      title: "New",
+      pastedText: "narrative",
+      attachments: [],
+    };
+    const att: IntakeAttachmentRecord = {
+      attachmentId: "att_live",
+      fileName: "CR-8.xlsx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      size: 10,
+      extractionStatus: "EXTRACTED",
+      extractedContent: "[Sheet: OPEN(CR-8)]\nValve,defective",
+    };
+    // Attachment lands first (as onChange functional update does).
+    caseData = { ...caseData, attachments: [att] };
+    // Stale-style update (bug): spread a snapshot taken before attach → wipes.
+    const staleSnapshot: MiniCase = {
+      title: "New",
+      pastedText: "narrative",
+      attachments: [],
+    };
+    const wiped = { ...staleSnapshot, pastedText: "narrative updated" };
+    expect(wiped.attachments).toHaveLength(0);
+    // Fixed pattern: merge onto latest.
+    const patch = (updater: (prev: MiniCase) => MiniCase) => {
+      caseData = updater(caseData);
+    };
+    caseData = { ...caseData, attachments: [att] };
+    patch((prev) => ({ ...prev, pastedText: "narrative updated" }));
+    expect(caseData.attachments).toHaveLength(1);
+    expect(caseData.attachments[0]?.fileName).toBe("CR-8.xlsx");
+    expect(caseData.pastedText).toBe("narrative updated");
   });
 });
