@@ -117,101 +117,116 @@ function proposeGc01(): AnalyzeProposal {
   return {
     primaryCaseType: "CREW_MANNING",
     tags: ["pluto_leader", "crew_change", "owner_interest", "operational_continuity"],
-    brief: baseBrief({
-      recommendation:
-        "Postpone the Chief Mate change from Nansha and plan embarkation in Japan in late September (Voy.071). Do not force an impractical Nansha change or incur extraordinary overseas cost solely to preserve the original plan.",
-      decisionReadiness: "READY",
-      decisionAuthorities: [
-        auth("Crew-change/document coordination", "Manning Agent"),
-        auth("Continuation onboard", "Master"),
-        auth("Final management approval of postponement", "President/DP"),
-      ],
-      presidentDecision:
-        "Approve postponing the C/M change from Nansha and planning the change in Japan in late September.",
-      why: "Nansha embarkation is no longer practically achievable; no immediate safety/MSM emergency requires replacement there; Japan offers a more reliable and lower-cost opportunity.",
-      confirmedFacts: [
-        fact("confirmed", "C/M Inoy cannot board at Nansha as originally planned."),
-        fact(
-          "confirmed",
-          "Current Chief Mate can continue onboard for the time being; no immediate safety/MSM emergency identified.",
-        ),
-        fact(
-          "confirmed",
-          "Next intended opportunity is crew change in Japan during Voy.071 in late September 2026.",
-        ),
-      ],
-      unverifiedFacts: [],
-      assumptions: [],
-      missingInformation: [
-        fact("missing", "Exact Japanese port and ETA not finally fixed.", {
-          who: "Vessel schedule / agent",
-          what: "Japanese port and ETA",
-          evidenceRequired: "Confirmed itinerary",
+    brief: {
+      ...baseBrief({
+        recommendation:
+          "南沙での C/M 交代は延期し、Voy.071（9月下旬）の日本乗船を計画する。安全／MSM 上の緊急交代が無い限り、当初計画維持のためだけに非現実的な南沙交代や過大な海外手配コストを強行しない。",
+        decisionReadiness: "READY",
+        decisionAuthorities: [
+          auth("配乗・書類調整", "Manning Agent"),
+          auth("本船での継続乗船の統括", "Master"),
+          auth("交代延期の最終経営承認", "President/DP"),
+        ],
+        presidentDecision:
+          "社長判断：南沙での C/M 交代延期と、9月下旬日本での交代計画を承認する。",
+        why: "南沙乗船は実質困難。安全／MSM 上の緊急交代は見当たらない。日本での交代の方が確実かつコスト面でも妥当である。",
+        confirmedFacts: [
+          fact("confirmed", "C/M Inoy は当初計画どおり南沙で乗船できない。"),
+          fact(
+            "confirmed",
+            "現任 C/M は当面継続乗船可能で、即時の安全／MSM 緊急は確認されていない。",
+          ),
+          fact(
+            "confirmed",
+            "次の予定機会は Voy.071（2026年9月下旬）の日本でのクルーチェンジである。",
+          ),
+        ],
+        unverifiedFacts: [],
+        assumptions: [],
+        missingInformation: [
+          fact("missing", "日本の寄港地と ETA が最終確定していない。", {
+            who: "Vessel schedule / agent",
+            what: "日本寄港地と ETA",
+            evidenceRequired: "確定スケジュール",
+          }),
+          fact("missing", "Inoy の最終的な書類・渡航準備状況。", {
+            who: "Manning Agent / CSI",
+            what: "書類および乗船準備",
+            evidenceRequired: "書類チェックリスト",
+          }),
+          fact("missing", "必要に応じ現任 C/M の継続確認。", {
+            who: "Master / 現任 Chief Mate",
+            what: "継続乗船の確認",
+            evidenceRequired: "必要時の書面確認",
+          }),
+        ],
+        risks: [
+          "書類準備遅れによる日本交代の遅延",
+          "スケジュール／ETA 変更による乗船ウィンドウへの影響",
+        ],
+        options: [
+          {
+            id: id("opt"),
+            title: "日本へ延期（推奨）",
+            summary: "南沙計画を取りやめ、9月下旬の日本交代を準備する。",
+          },
+          {
+            id: id("opt"),
+            title: "南沙交代を強行",
+            summary: "非推奨 — 安全上の必要がなく、非現実的かつ高コスト。",
+          },
+        ],
+        delegation: [
+          {
+            id: id("del"),
+            assignee: "CSI / Manning Agent",
+            task: "Inoy の書類・乗船準備を管理する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Vessel / schedule",
+            task: "日本寄港地と ETA を確認する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Master / 現任 C/M",
+            task: "継続乗船の手配を確認する。",
+          },
+        ],
+        learning: learning({
+          knowledgeUpdateCandidate: true,
+          notes:
+            "重要配乗書類の早期追跡は今後の海外交代にも再利用できる。本件単独では大規模なシステム問題とはみなさない。",
         }),
-        fact("missing", "Final document/travel readiness for Inoy.", {
-          who: "Manning Agent / CSI",
-          what: "Document and boarding readiness",
-          evidenceRequired: "Document status checklist",
-        }),
-        fact("missing", "Continuation confirmation by current Chief Mate where required.", {
-          who: "Master / current Chief Mate",
-          what: "Continued service confirmation",
-          evidenceRequired: "Written confirmation if required",
-        }),
-      ],
-      risks: [
-        "Document readiness slip delaying Japan change",
-        "Schedule/ETA change affecting embarkation window",
-      ],
-      options: [
-        {
-          id: id("opt"),
-          title: "Postpone to Japan (recommended)",
-          summary: "Abandon Nansha plan; prepare Japan late-September change.",
-        },
-        {
-          id: id("opt"),
-          title: "Force Nansha change",
-          summary: "Not recommended — impractical and costly without safety necessity.",
-        },
-      ],
-      delegation: [
-        {
-          id: id("del"),
-          assignee: "CSI / Manning Agent",
-          task: "Manage Inoy documentation and boarding preparation.",
-        },
-        {
-          id: id("del"),
-          assignee: "Vessel / schedule",
-          task: "Confirm Japanese port and ETA.",
-        },
-        {
-          id: id("del"),
-          assignee: "Master / current C/M",
-          task: "Confirm continuation arrangements.",
-        },
-      ],
-      learning: learning({
-        knowledgeUpdateCandidate: true,
-        notes:
-          "Earlier tracking of critical crew-change documents; reusable for future overseas changes. Not a major system issue from this case alone.",
+        nextActions: [
+          {
+            id: id("act"),
+            text: "CSI に Inoy の日本乗船準備を進めるよう指示する。",
+            owner: "President/DP",
+            status: "open",
+          },
+          {
+            id: id("act"),
+            text: "日本寄港地／ETA の確認を取得する。",
+            owner: "Vessel/ops",
+            status: "open",
+          },
+        ],
       }),
-      nextActions: [
-        {
-          id: id("act"),
-          text: "Instruct CSI to proceed on Japan embarkation prep for Inoy.",
-          owner: "President/DP",
-          status: "open",
-        },
-        {
-          id: id("act"),
-          text: "Obtain Japanese port/ETA confirmation.",
-          owner: "Vessel/ops",
-          status: "open",
-        },
+      proposedCurrentDecisionQuestion: {
+        decisionRequiredNow:
+          "南沙での C/M 交代を延期し、日本（Voy.071・9月下旬）での乗船に切り替えることを承認するか？",
+        expectedDecider: "President/DP",
+        deferredToExecutionOrClosure: [
+          "書類・渡航手配の実務",
+          "寄港地／ETA 確定後の実施手順",
+        ],
+      },
+      suggestedQuestionsToVessel: [
+        "現任 C/M の継続乗船に支障はないか（健康・疲労・MSM 含む）？",
+        "日本寄港地と ETA の最新見込みは？",
       ],
-    }),
+    },
   };
 }
 
@@ -219,96 +234,114 @@ function proposeGc02(): AnalyzeProposal {
   return {
     primaryCaseType: "TECHNICAL",
     tags: ["fairwind", "class_nk", "maintenance", "cms", "knowledge_update_candidate"],
-    brief: baseBrief({
-      recommendation:
-        "Do not abandon the existing CMS handling approach without evidence. Obtain one narrow written clarification from ClassNK on the specific items raised by the owner-side Superintendent, then close the interpretive gap among Company, owner side, and vessel. Escalate to Class attendance only where the written clarification shows a specific item cannot be handled by the Chief Engineer.",
-      decisionReadiness: "CONDITIONAL",
-      decisionAuthorities: [
-        auth("Technical assessment", "Superintendent"),
-        auth("Class acceptance / interpretation", "Class"),
-        auth("Final management confirmation / communication direction", "President/DP"),
-      ],
-      presidentDecision:
-        "Endorse maintaining the current handling plan, subject to one focused ClassNK re-confirmation addressing Kashiwabara's specific concern. President does not make the machinery/Class technical judgment personally.",
-      why: "Prior ClassNK response and Technical Superintendent assessment support the approach, but the specific exception concern remains to be confirmed in writing.",
-      confirmedFacts: [
-        fact(
-          "confirmed",
-          "ClassNK has provided a favorable prior response regarding proposed CMS handling (C/E open-up by due date; Class verify at next relevant survey).",
-        ),
-        fact("confirmed", "Technical Superintendent Haruyama considers the approach acceptable."),
-        fact(
-          "confirmed",
-          "Owner-side Superintendent Kashiwabara raised a specific concern and requested re-confirmation from ClassNK.",
-        ),
-      ],
-      unverifiedFacts: [
-        fact(
-          "unverified",
-          "Whether the prior ClassNK response covers all actual CMS items in question.",
-        ),
-      ],
-      assumptions: [],
-      missingInformation: [
-        fact(
-          "missing",
-          "Whether any particular item requires different treatment or Class attendance.",
+    brief: {
+      ...baseBrief({
+        recommendation:
+          "根拠なく現行の CMS 取扱い方針を放棄しない。Owner 側 Superintendent が指摘した個別項目について ClassNK から狭い範囲の書面確認を取得し、Company／Owner 側／本船の解釈差を解消する。書面で C/E 対応不可と示された項目に限り Class 臨検へ Escalate する。",
+        decisionReadiness: "CONDITIONAL",
+        decisionAuthorities: [
+          auth("船上での CMS 開放・実施", "C/E"),
+          auth("技術評価・Class 質問の整理", "Superintendent"),
+          auth("Class 受理／解釈", "Class"),
+          auth("最終経営確認・対外説明方針", "President/DP"),
+        ],
+        presidentDecision:
+          "社長判断：Kashiwabara 指摘事項に限定した ClassNK 再確認を条件に、現行取扱い方針の維持を承認する。機関／Class の技術判断自体は President が行わない。",
+        why: "ClassNK の既往回答と Technical Superintendent の評価は方針を支持するが、例外懸念の個別項目は書面確認が残っている。",
+        confirmedFacts: [
+          fact(
+            "confirmed",
+            "ClassNK は提案 CMS 取扱い（期限までの C/E 開放、次回関連検査での Class 確認）について好意的な既往回答を出している。",
+          ),
+          fact(
+            "confirmed",
+            "Technical Superintendent（春山）は当該方針を妥当と評価している。",
+          ),
+          fact(
+            "confirmed",
+            "Owner 側 Superintendent（柏原）が特定懸念を示し、ClassNK への再確認を求めている。",
+          ),
+        ],
+        unverifiedFacts: [
+          fact(
+            "unverified",
+            "既往の ClassNK 回答が、問題となっている全 CMS 項目をカバーしているかは未確定。",
+          ),
+        ],
+        assumptions: [],
+        missingInformation: [
+          fact(
+            "missing",
+            "特定項目が別扱いまたは Class 臨検を要するか。",
+            {
+              who: "Technical Superintendent / ClassNK",
+              what: "C/E 単独対応が合理的でない項目と Class 取扱い",
+              evidenceRequired: "項目リスト + ClassNK 書面回答",
+            },
+          ),
+        ],
+        risks: [
+          "Company／Owner 側／Class の解釈ギャップ",
+          "懸念の一般化による不要な Class 臨検コスト",
+        ],
+        options: [
           {
-            who: "Technical Superintendent / ClassNK",
-            what: "Exact item(s) that cannot reasonably be handled by C/E alone and Class treatment",
-            evidenceRequired: "Item list + written ClassNK response",
+            id: id("opt"),
+            title: "狭い範囲の ClassNK 確認（推奨）",
+            summary: "現行方針を維持しつつ、焦点を絞った書面確認を得る。",
           },
-        ),
-      ],
-      risks: [
-        "Interpretive gap between Company, owner side, and Class",
-        "Unnecessary Class attendance cost if concern is over-generalized",
-      ],
-      options: [
-        {
-          id: id("opt"),
-          title: "Narrow ClassNK clarification (recommended)",
-          summary: "Keep current plan pending focused written confirmation.",
-        },
-        {
-          id: id("opt"),
-          title: "Abandon approach now",
-          summary: "Not recommended without evidence that prior Class guidance fails.",
-        },
-      ],
-      delegation: [
-        {
-          id: id("del"),
-          assignee: "Haruyama (Technical Superintendent)",
-          task: "Identify technically problematic items and formulate the Class question.",
-        },
-        {
-          id: id("del"),
-          assignee: "ClassNK",
-          task: "Confirm acceptance/conditions in writing for the questioned items.",
-        },
-        {
-          id: id("del"),
-          assignee: "Company",
-          task: "Inform owner-side Superintendent after Class clarification.",
-        },
-      ],
-      learning: learning({
-        knowledgeUpdateCandidate: true,
-        notes:
-          "Final ClassNK clarification may become reusable company knowledge. IA/MR only if broader CMS-management weakness is revealed.",
+          {
+            id: id("opt"),
+            title: "いま方針を放棄",
+            summary: "既往 Class 指導が無効である証拠が無い限り非推奨。",
+          },
+        ],
+        delegation: [
+          {
+            id: id("del"),
+            assignee: "Haruyama (Technical Superintendent)",
+            task: "技術的に問題となる項目を特定し、Class への質問を作成する。",
+          },
+          {
+            id: id("del"),
+            assignee: "ClassNK",
+            task: "指摘項目の受理／条件を書面で確認する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Company",
+            task: "Class 確認後、Owner 側 Superintendent へ一貫した説明を行う。",
+          },
+        ],
+        learning: learning({
+          knowledgeUpdateCandidate: true,
+          notes:
+            "最終的な ClassNK 確認は社内ナレッジとして再利用できる可能性がある。より広い CMS 管理の弱点が判明した場合のみ IA/MR を検討する。",
+        }),
+        nextActions: [
+          {
+            id: id("act"),
+            text: "項目リスト付きで ClassNK へ焦点を絞った確認依頼を送る。",
+            owner: "Technical Superintendent",
+            status: "open",
+          },
+        ],
+        communication:
+          "Class 確認後、Owner 側 Superintendent と本船へ一貫した方針を連絡する。",
       }),
-      nextActions: [
-        {
-          id: id("act"),
-          text: "Send focused ClassNK clarification request with item list.",
-          owner: "Technical Superintendent",
-          status: "open",
-        },
+      proposedCurrentDecisionQuestion: {
+        decisionRequiredNow:
+          "現行 CMS 取扱いを維持したまま、Kashiwabara 指摘の個別項目について ClassNK の書面確認を取得する方針を承認するか？",
+        expectedDecider: "President/DP（技術判断は Superintendent / Class）",
+        deferredToExecutionOrClosure: [
+          "C/E による開放・整備の実施",
+          "Class 確認後の対外説明実務",
+        ],
+      },
+      suggestedQuestionsToVessel: [
+        "対象 CMS 項目の現状（開放可否・期限・必要な支援）は？",
       ],
-      communication:
-        "After Class clarification, communicate consistent position to owner-side Superintendent and vessel.",
-    }),
+    },
   };
 }
 
@@ -329,142 +362,160 @@ function proposeGc03(): AnalyzeProposal {
       "emergency_preparedness",
       "training_required",
     ],
-    brief: baseBrief({
-      recommendation:
-        "Immediately rectify all Internal Audit and Panama ASI items with appropriate evidence. In parallel, challenge shallow root causes, run horizontal checks, set preventive actions, verify effectiveness after a reasonable period, and escalate technical items (e.g. earth fault) to the Technical Superintendent. Multiple observations may indicate broader weaknesses in recordkeeping, document control, emergency familiarization, routine verification, and housekeeping — treat this as a hypothesis until validated.",
-      decisionReadiness: "CONDITIONAL",
-      decisionAuthorities: [
-        auth("Onboard corrective execution", "Master"),
-        auth("Technical verification of electrical earth fault and technical defects", "Superintendent"),
-        auth("Root cause / SMS / audit follow-up", "President/DP"),
-        auth("Final acceptance of Company closure / management follow-up", "President/DP"),
-      ],
-      presidentDecision:
-        "Do not treat the case as closed merely because individual items were corrected or photographs submitted. Require immediate rectification plus deeper root-cause review, horizontal checks, and effectiveness verification for recurring/system-type weaknesses.",
-      why: "Immediate corrective direction is clear, but closure is not ready until root cause quality, horizontal-check results, and evidence are verified.",
-      confirmedFacts: [
-        fact("confirmed", "Two Company Internal Audit deficiencies recorded on CR-4."),
-        fact("confirmed", "Vessel submitted CR-5 with stated causes and CR-6 with stated corrections."),
-        fact(
-          "confirmed",
-          "Panama Flag ASI provided a written list of non-official deficiencies/observations (not recorded as official deficiencies) and requested prompt rectification with before/after evidence.",
-        ),
-      ],
-      unverifiedFacts: [
-        fact(
-          "unverified",
-          "CR-5 explanations are the vessel's stated causes, not necessarily proven root causes.",
-        ),
-        fact(
-          "unverified",
-          "CR-6 statements do not by themselves prove preventive effectiveness.",
-        ),
-      ],
-      assumptions: [
-        fact(
-          "assumption",
-          "Possible broader weakness in onboard verification, recordkeeping, document control, and familiarization (hypothesis until validated).",
-        ),
-      ],
-      missingInformation: [
-        fact("missing", "Whether bunkering work was correctly reflected in actual work/rest hours, not only Remarks.", {
-          who: "Master / C/E",
-          what: "Verify actual hours and prior samples",
-          evidenceRequired: "Recent Work/Rest Records + bunkering records",
+    brief: {
+      ...baseBrief({
+        recommendation:
+          "社内監査および Panama ASI の全項目を、適切な証拠付きで直ちに是正する。並行して浅い root cause を challenge し、horizontal check を行い、予防策を設定し、相当期間後に effectiveness verification を行う。アース故障などの技術項目は Technical Superintendent へ Escalate する。複数指摘は記録・文書管理・緊急 Familiarization・日常確認・Housekeeping の broader weakness の仮説として扱い、検証まで断定しない。",
+        decisionReadiness: "CONDITIONAL",
+        decisionAuthorities: [
+          auth("船上是正の実施統括", "Master"),
+          auth("電気アース故障等の技術検証", "Superintendent"),
+          auth("根本原因／SMS／監査フォロー", "President/DP"),
+          auth("Company クローズ／管理フォローの最終受理", "President/DP"),
+        ],
+        presidentDecision:
+          "社長判断：個別是正や写真提出だけではクローズとみなさない。即時是正に加え、再発／システム型弱点について root cause の深掘り、horizontal check、effectiveness verification を求める。Do not accept photo-close only.",
+        why: "即時是正の方向は明確だが、root cause の質・horizontal check 結果・証拠確認が終わるまでクローズ判断には至らない。Continue to challenge shallow root causes.",
+        confirmedFacts: [
+          fact("confirmed", "CR-4 に社内監査不適合が2件記録されている。"),
+          fact(
+            "confirmed",
+            "本船は原因記載の CR-5 と是正記載の CR-6 を提出している。",
+          ),
+          fact(
+            "confirmed",
+            "Panama Flag ASI が非公式指摘リストを書面で示し、前後証拠付きの速やかな是正を求めている（公式 deficiency としては未記録）。",
+          ),
+        ],
+        unverifiedFacts: [
+          fact(
+            "unverified",
+            "CR-5 の説明は本船の申告原因（shallow root cause の可能性）であり、証明された根本原因とは限らない。",
+          ),
+          fact(
+            "unverified",
+            "CR-6 の記載だけでは予防の有効性（effectiveness）を証明しない。",
+          ),
+        ],
+        assumptions: [
+          fact(
+            "assumption",
+            "Possible broader weakness in onboard verification, recordkeeping, document control, and familiarization（検証までの仮説）。",
+          ),
+        ],
+        missingInformation: [
+          fact("missing", "バンカリング作業が Remarks だけでなく実労働／休息時間に正しく反映されたか。", {
+            who: "Master / C/E",
+            what: "実時間と過去サンプルの確認",
+            evidenceRequired: "直近 Work/Rest Records + バンカリング記録",
+          }),
+          fact("missing", "SKSMS Rev.5 の管理文書改訂管理がどう失敗したか。", {
+            who: "Master / Company",
+            what: "改訂管理の失敗メカニズム",
+            evidenceRequired: "管理文書リスト／受領・周知記録",
+          }),
+          fact("missing", "2/O が非常発電機始動を実演できる証拠。", {
+            who: "Master / 関係職員",
+            what: "実技能力の確認",
+            evidenceRequired: "実演／Familiarization 記録",
+          }),
+          fact("missing", "100V アース故障の技術状況と恒久是正の証拠。", {
+            who: "C/E / Technical Superintendent",
+            what: "故障特定と恒久是正",
+            evidenceRequired: "計測／修理報告／技術確認",
+          }),
+        ],
+        risks: [
+          "非公式指摘の再発による将来の PSC リスク",
+          "浅い根本原因のままではシステム弱点が残る",
+          "技術欠陥（アース故障）が未検証のまま残る",
+        ],
+        options: [
+          {
+            id: id("opt"),
+            title: "即時是正 + システムフォロー（推奨）",
+            summary: "いま是正し、RC を疑い、水平展開し、有効性を検証する。",
+          },
+          {
+            id: id("opt"),
+            title: "写真提出のみでクローズ",
+            summary: "不可 — 根本原因も有効性も扱えない。",
+          },
+        ],
+        delegation: [
+          {
+            id: id("del"),
+            assignee: "Master",
+            task: "船上是正と証拠一式を統括する。",
+          },
+          {
+            id: id("del"),
+            assignee: "C/O",
+            task: "甲板／ブリッジ／文書事項を担当する。",
+          },
+          {
+            id: id("del"),
+            assignee: "C/E",
+            task: "機関／電気／薬品／労働休息事項を担当する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Technical Superintendent",
+            task: "技術妥当性（アース故障含む）を確認する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Company / DP",
+            task: "根本原因の質、水平展開、クローズをレビューする。",
+          },
+        ],
+        learning: learning({
+          correctiveAction: true,
+          preventiveAction: true,
+          effectivenessVerification: true,
+          horizontalCheck: true,
+          fleetWideRelevance: "possible",
+          internalAuditCandidate: true,
+          managementReviewCandidate: true,
+          knowledgeUpdateCandidate: true,
+          notes:
+            "IA と ASI の併存から重要な管理上の学びが期待される。Professional Boundary：電気／アース故障は写真のみでクローズ宣言しない。技術項目の妥当性は Technical Superintendent（President ではない）が確認する。",
         }),
-        fact("missing", "How controlled-document revision control failed for SKSMS Rev.5.", {
-          who: "Master / Company",
-          what: "Determine revision-control failure mechanism",
-          evidenceRequired: "Controlled document list / revision receipt and acknowledgement",
-        }),
-        fact("missing", "Evidence that 2/O can demonstrate Emergency Generator starting.", {
-          who: "Master / relevant officer",
-          what: "Practical competence demonstration",
-          evidenceRequired: "Demonstration / familiarization record",
-        }),
-        fact("missing", "Technical status and closure evidence of 100V earth fault.", {
-          who: "C/E / Technical Superintendent",
-          what: "Identify fault and permanent correction",
-          evidenceRequired: "Readings / repair report / technical verification",
-        }),
-      ],
-      risks: [
-        "Future PSC exposure if non-official observations recur",
-        "Shallow root causes leave systemic weaknesses unaddressed",
-        "Technical defect (earth fault) left unverified",
-      ],
-      options: [
-        {
-          id: id("opt"),
-          title: "Immediate fix + system follow-up (recommended)",
-          summary: "Rectify now; challenge RC; horizontal check; effectiveness verification.",
-        },
-        {
-          id: id("opt"),
-          title: "Photo-close only",
-          summary: "Not acceptable — does not address root cause or effectiveness.",
-        },
-      ],
-      delegation: [
-        {
-          id: id("del"),
-          assignee: "Master",
-          task: "Coordinate onboard corrections and evidence pack.",
-        },
-        {
-          id: id("del"),
-          assignee: "C/O",
-          task: "Deck/bridge/document matters as applicable.",
-        },
-        {
-          id: id("del"),
-          assignee: "C/E",
-          task: "Engine-room/electrical/chemical/work-rest items as applicable.",
-        },
-        {
-          id: id("del"),
-          assignee: "Technical Superintendent",
-          task: "Technical validation (including earth fault).",
-        },
-        {
-          id: id("del"),
-          assignee: "Company / DP",
-          task: "Review root-cause quality, horizontal check, and closure.",
-        },
-      ],
-      learning: learning({
-        correctiveAction: true,
-        preventiveAction: true,
-        effectivenessVerification: true,
-        horizontalCheck: true,
-        fleetWideRelevance: "possible",
-        internalAuditCandidate: true,
-        managementReviewCandidate: true,
-        knowledgeUpdateCandidate: true,
-        notes:
-          "Significant management learning expected from combined IA + ASI signals. Professional Boundary: do not declare electrical/earth-fault closed from photos alone; Technical Superintendent (not President) validates technical items.",
+        nextActions: [
+          {
+            id: id("act"),
+            text: "前後証拠付きで即時是正を完了する。",
+            owner: "Master",
+            status: "open",
+          },
+          {
+            id: id("act"),
+            text: "CR-5 の root cause を challenge し、horizontal check を開始する。",
+            owner: "Company/DP",
+            status: "open",
+          },
+          {
+            id: id("act"),
+            text: "アース故障を技術確認へ Escalate する。",
+            owner: "Technical Superintendent",
+            status: "open",
+          },
+        ],
       }),
-      nextActions: [
-        {
-          id: id("act"),
-          text: "Complete immediate rectifications with before/after evidence.",
-          owner: "Master",
-          status: "open",
-        },
-        {
-          id: id("act"),
-          text: "Challenge CR-5 root causes; open horizontal checks.",
-          owner: "Company/DP",
-          status: "open",
-        },
-        {
-          id: id("act"),
-          text: "Escalate earth fault for technical verification.",
-          owner: "Technical Superintendent",
-          status: "open",
-        },
+      proposedCurrentDecisionQuestion: {
+        decisionRequiredNow:
+          "即時是正に加え、根本原因の深掘り・水平展開・有効性検証を完了するまでクローズしない方針を承認するか？",
+        expectedDecider: "President/DP（技術項目は Technical Superintendent）",
+        deferredToExecutionOrClosure: [
+          "個別是正の実施と証拠収集",
+          "有効性検証の実施タイミング管理",
+        ],
+      },
+      suggestedQuestionsToVessel: [
+        "各是正項目の前後証拠は揃っているか？",
+        "100V アース故障の現状計測値と暫定／恒久措置は？",
       ],
-    }),
+    },
   };
 }
 
@@ -488,110 +539,124 @@ function proposeGc04(
       "ship_fund",
       "company_liquidity",
     ],
-    brief: baseBrief({
-      recommendation: `Vessel-side requirement to restore projected closing toward the USD5,000 target is approximately USD${required.toLocaleString()}. Therefore USD${recommended.toLocaleString()} is the appropriate vessel-side operational recommendation. Final remittance remains subject to Company USD liquidity: if USD40,000 would materially endanger DCKK, CSI, Casareo, SPF, Retirement Fund or other critical obligations, a lower CTM may be selected and deficit recovery deferred. Necessary ≠ Affordable — keep these judgments separate. Do not remit CSI before Miyuki Kisen receipt confirmation.`,
-      decisionReadiness: readiness,
-      decisionAuthorities: [
-        auth("Ship Fund data / onboard requirement input", "Master"),
-        auth("Company cash-position confirmation", "Finance/Accounting"),
-        auth("Final CTM funding decision", "President/DP"),
-      ],
-      presidentDecision: `Determine/approve the September CTM amount after comparing vessel requirement (~USD${required.toLocaleString()}) with Company USD liquidity. On currently supplied vessel-side figures, USD${recommended.toLocaleString()} is the preferred operational amount, subject to Company liquidity.`,
-      why: liquidityConfirmed
-        ? "Vessel-side requirement is clear and Company liquidity confirmation is present in the FinanceSnapshot."
-        : "Vessel-side requirement is sufficiently clear, but final approval requires current Company liquidity confirmation near the remittance date.",
-      confirmedFacts: [
-        fact("confirmed", "Reported Ship Fund carry forward USD4,052.19 (supplied)."),
-        fact(
-          "confirmed",
-          "Nansha provision estimate USD9,591.98 not yet reflected in that balance (pending/estimated status).",
-        ),
-        fact("confirmed", "Target Ship Fund closing balance USD5,000."),
-        fact(
-          "confirmed",
-          "CSI must not be remitted before Miyuki Kisen receipt is confirmed; main month-end USD payments generally from SMBC USD.",
-        ),
-      ],
-      unverifiedFacts: [],
-      assumptions: [],
-      missingInformation: liquidityConfirmed
-        ? [
-            fact("missing", "Exact September CTM date/payee may still be unsettled.", {
-              who: "Vessel / agent",
-              what: "Final CTM date and receiving party",
-              evidenceRequired: "Port schedule / agent instructions",
-            }),
-          ]
-        : [
-            fact("missing", "Available Company USD liquidity by the proposed CTM date.", {
-              who: "Finance / Accounting / President",
-              what: "USD liquidity vs committed near-term obligations",
-              evidenceRequired: "Current bank balances + confirmed near-term inflows/outflows",
-            }),
-            fact("missing", "Exact September CTM date and payee.", {
-              who: "Vessel / agent",
-              what: "Final CTM date and receiving party",
-              evidenceRequired: "Port schedule / agent instructions",
-            }),
-          ],
-      risks: [
-        "Ship Fund deficit if CTM undershoots requirement",
-        "Company liquidity stress if CTM overshoots without confirmation",
-        "CSI remittance before Miyuki receipt",
-      ],
-      options: [
-        {
-          id: id("opt"),
-          title: "CTM USD40,000 (vessel-side preferred)",
-          summary: "Approaches USD5,000 target on supplied projections, subject to liquidity.",
-        },
-        {
-          id: id("opt"),
-          title: "Lower CTM / defer recovery",
-          summary: "If liquidity endangers critical obligations, select lower amount.",
-        },
-      ],
-      delegation: [
-        {
-          id: id("del"),
-          assignee: "Master",
-          task: "Maintain and report Ship Fund position.",
-        },
-        {
-          id: id("del"),
-          assignee: "Finance / Accounting",
-          task: "Update bank balances and committed payments.",
-        },
-        {
-          id: id("del"),
-          assignee: "Agent",
-          task: "Handle CTM delivery after authorization.",
-        },
-        {
-          id: id("del"),
-          assignee: "President",
-          task: "Decide final funding amount.",
-        },
-      ],
-      learning: learning({
-        notes:
-          "Compare actual CTM/Ship Fund result with forecast later. No automatic IA/MR merely because Ship Fund temporarily went negative.",
+    brief: {
+      ...baseBrief({
+        recommendation: `期末残高を目標 USD5,000 に近づけるための本船側所要は約 USD${required.toLocaleString()}。したがって本船運航上の推奨は USD${recommended.toLocaleString()}。最終送金は Company の USD 流動性に従う：USD40,000 が DCKK／CSI／Casareo／SPF／Retirement Fund 等の重要支払を危うくする場合は、より低い CTM を選び不足回収を先送りできる。Necessary ≠ Affordable — 両判断は分ける。三幸汽船の入金確認前に CSI 送金を行わない。`,
+        decisionReadiness: readiness,
+        decisionAuthorities: [
+          auth("Ship Fund データ／船上所要の入力", "Master"),
+          auth("Company 資金繰り確認", "Finance/Accounting"),
+          auth("CTM 最終資金決定", "President/DP"),
+        ],
+        presidentDecision: `社長判断：本船所要（約 USD${required.toLocaleString()}）と Company USD 流動性を比較し、9月 CTM 額を決定／承認する。現時点の本船側数値では運航上 USD${recommended.toLocaleString()} が望ましいが、流動性確認を条件とする。`,
+        why: liquidityConfirmed
+          ? "本船側所要は明確で、FinanceSnapshot に Company 流動性確認がある。"
+          : "本船側所要は十分明確だが、送金直前の Company 流動性確認が最終承認に必要である。",
+        confirmedFacts: [
+          fact("confirmed", "報告 Ship Fund 繰越 USD4,052.19（提供値）。"),
+          fact(
+            "confirmed",
+            "南沙プロビション見積 USD9,591.98 は当該残高に未反映（Pending／見積）。",
+          ),
+          fact("confirmed", "Ship Fund 目標期末残高 USD5,000。"),
+          fact(
+            "confirmed",
+            "CSI は三幸汽船入金確認前に送金しない。主要月末 USD 支払は原則 SMBC USD。",
+          ),
+        ],
+        unverifiedFacts: [],
+        assumptions: [],
+        missingInformation: liquidityConfirmed
+          ? [
+              fact("missing", "9月 CTM の正確な日付／受取人が未確定の可能性。", {
+                who: "Vessel / agent",
+                what: "最終 CTM 日付と受取側",
+                evidenceRequired: "港スケジュール／代理店指示",
+              }),
+            ]
+          : [
+              fact("missing", "予定 CTM 日付時点の Company USD 流動性。", {
+                who: "Finance / Accounting / President",
+                what: "USD 流動性 vs 直近確定債務",
+                evidenceRequired: "現行残高 + 直近確定入出金",
+              }),
+              fact("missing", "9月 CTM の正確な日付と受取人。", {
+                who: "Vessel / agent",
+                what: "最終 CTM 日付と受取側",
+                evidenceRequired: "港スケジュール／代理店指示",
+              }),
+            ],
+        risks: [
+          "CTM 不足による Ship Fund 欠損",
+          "確認なしの過大 CTM による Company 流動性逼迫",
+          "三幸入金前の CSI 送金",
+        ],
+        options: [
+          {
+            id: id("opt"),
+            title: "CTM USD40,000（本船側推奨）",
+            summary: "提供試算では USD5,000 目標に近づく。流動性条件付き。",
+          },
+          {
+            id: id("opt"),
+            title: "より低い CTM／回収延期",
+            summary: "重要支払を危うくする場合は低額を選ぶ。",
+          },
+        ],
+        delegation: [
+          {
+            id: id("del"),
+            assignee: "Master",
+            task: "Ship Fund 残高を維持・報告する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Finance / Accounting",
+            task: "銀行残高と確定支払を更新する。",
+          },
+          {
+            id: id("del"),
+            assignee: "Agent",
+            task: "承認後の CTM 受渡しを行う。",
+          },
+          {
+            id: id("del"),
+            assignee: "President",
+            task: "最終資金額を決定する。",
+          },
+        ],
+        learning: learning({
+          notes:
+            "後で実際の CTM／Ship Fund 結果と予測を比較する。Ship Fund が一時的にマイナスになったことだけで自動的に IA/MR としない。",
+        }),
+        nextActions: [
+          {
+            id: id("act"),
+            text: "送金日近傍の Company USD 流動性を確認する。",
+            owner: "Finance/Accounting",
+            status: "open",
+          },
+          {
+            id: id("act"),
+            text: "President が 9月 CTM 最終額を承認する。",
+            owner: "President/DP",
+            status: "open",
+          },
+        ],
       }),
-      nextActions: [
-        {
-          id: id("act"),
-          text: "Confirm Company USD liquidity near remittance date.",
-          owner: "Finance/Accounting",
-          status: "open",
-        },
-        {
-          id: id("act"),
-          text: "President approve final September CTM amount.",
-          owner: "President/DP",
-          status: "open",
-        },
+      proposedCurrentDecisionQuestion: {
+        decisionRequiredNow: `本船所要（約 USD${required.toLocaleString()}）と Company 流動性を踏まえ、9月 CTM をいくら承認するか？`,
+        expectedDecider: "President/DP",
+        deferredToExecutionOrClosure: [
+          "送金実務・代理店手配",
+          "Ship Fund 実績の事後レビュー",
+        ],
+      },
+      suggestedQuestionsToVessel: [
+        "Ship Fund の最新残高と Pending 費用の更新はあるか？",
+        "CTM 希望日と受取方法の最新指示は？",
       ],
-    }),
+    },
   };
 }
 
@@ -1101,21 +1166,21 @@ export function alignWhyWithFinalReadiness(
 ): string {
   const label =
     final === "READY"
-      ? "判断可能（READY）"
+      ? "判断可能"
       : final === "CONDITIONAL"
-        ? "条件付き（CONDITIONAL）"
-        : "判断不可（NOT READY）";
+        ? "条件付き"
+        : "判断不可";
 
   let cleaned = why
     .replace(/\s*Readiness is (READY|CONDITIONAL|NOT_READY)\b[^.。]*[.。]?/gi, " ")
     .replace(/\s*Decision remains NOT[_\s-]?READY\b[^.。]*[.。]?/gi, " ")
     .replace(/\s*最終の判断準備状況は[^。\n]*。/g, " ")
     .replace(
-      /\s*現時点は(?:判断可能（READY）|条件付き（CONDITIONAL）|判断不可（NOT READY）)[。.]?/g,
+      /\s*現時点は(?:判断可能（READY）|条件付き（CONDITIONAL）|判断不可（NOT READY）|判断可能|条件付き|判断不可)[。.]?/g,
       " ",
     )
     .replace(
-      /\s*判断準備状況は(?:READY|CONDITIONAL|NOT_READY|判断可能（READY）|条件付き（CONDITIONAL）|判断不可（NOT READY）)[^.。]*[.。]?/gi,
+      /\s*判断準備状況は(?:READY|CONDITIONAL|NOT_READY|判断可能（READY）|条件付き（CONDITIONAL）|判断不可（NOT READY）|判断可能|条件付き|判断不可)[^.。]*[.。]?/gi,
       " ",
     )
     .replace(/\s{2,}/g, " ")

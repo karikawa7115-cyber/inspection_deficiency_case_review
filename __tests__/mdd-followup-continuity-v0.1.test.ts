@@ -108,6 +108,9 @@ describe("Case Follow-up Continuity v0.1", () => {
       goldenCaseId: "GC01",
     });
     expect(withFu.brief.recommendation).toBe(base.brief.recommendation);
-    expect(withFu.brief.suggestedQuestionsToVessel).toBeUndefined();
+    // Golden Briefs may include Japanese suggested questions (UI-only).
+    expect(withFu.brief.suggestedQuestionsToVessel).toEqual(
+      base.brief.suggestedQuestionsToVessel,
+    );
   });
 });

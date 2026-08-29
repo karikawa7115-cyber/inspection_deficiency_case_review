@@ -121,9 +121,9 @@ describe("Attachment Semantic Analysis v0.2 refinements", () => {
     const contradictory =
       "Attachment text was ingested. Readiness is NOT_READY because facts are unverified. Decision remains NOT READY until confirmations.";
     const aligned = alignWhyWithFinalReadiness(contradictory, "CONDITIONAL");
-    expect(aligned).toMatch(/条件付き（CONDITIONAL）/);
+    expect(aligned).toMatch(/条件付き/);
     expect(aligned).not.toMatch(/NOT[_\s-]?READY/i);
-    expect(aligned).not.toMatch(/判断不可（NOT READY）/);
+    expect(aligned).not.toMatch(/判断不可/);
   });
 
   it("applyGateToBrief rewrites Why to match enforced readiness", () => {
@@ -137,15 +137,15 @@ describe("Attachment Semantic Analysis v0.2 refinements", () => {
     const brief = applyGateToBrief(proposal);
     expect(brief.why).toContain(`最終の判断準備状況は`);
     if (brief.decisionReadiness === "CONDITIONAL") {
-      expect(brief.why).toMatch(/条件付き（CONDITIONAL）/);
-      expect(brief.why).not.toMatch(/判断不可（NOT READY）/);
+      expect(brief.why).toMatch(/条件付き/);
+      expect(brief.why).not.toMatch(/判断不可/);
       expect(brief.why).not.toMatch(/Readiness is NOT_READY/i);
     }
     if (brief.decisionReadiness === "NOT_READY") {
-      expect(brief.why).toMatch(/判断不可（NOT READY）/);
+      expect(brief.why).toMatch(/判断不可/);
     }
     if (brief.decisionReadiness === "READY") {
-      expect(brief.why).toMatch(/判断可能（READY）/);
+      expect(brief.why).toMatch(/判断可能/);
       expect(brief.why).not.toMatch(/NOT[_\s-]?READY/i);
     }
   });
@@ -196,5 +196,25 @@ describe("Attachment Semantic Analysis v0.2 refinements", () => {
     });
     expect(withAtt.brief.recommendation).toBe(baseline.brief.recommendation);
     expect(withAtt.tags).not.toContain("semantic_v0_2");
+  });
+
+  it("localizes Golden GC01 Brief to Japanese-first like generic cases", () => {
+    const proposal = proposeFromHeuristics({
+      title: "M/V Pluto Leader - C/M Inoy Crew Change",
+      vessel: "PLUTO LEADER",
+      pastedText: "C/M Inoy cannot board at Nansha.",
+    });
+    expect(proposal.primaryCaseType).toBe("CREW_MANNING");
+    expect(proposal.brief.recommendation).toMatch(/南沙|日本|延期/);
+    expect(proposal.brief.presidentDecision).toMatch(/社長判断/);
+    expect(proposal.brief.why).toMatch(/南沙|日本/);
+    expect(proposal.brief.proposedCurrentDecisionQuestion?.decisionRequiredNow).toMatch(
+      /承認/,
+    );
+    expect(
+      proposal.brief.decisionAuthorities.every((a) =>
+        /[ぁ-んァ-ン一-龥]/.test(a.roleLabel),
+      ),
+    ).toBe(true);
   });
 });

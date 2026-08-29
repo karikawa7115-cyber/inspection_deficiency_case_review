@@ -32,7 +32,11 @@ import {
 } from "@/lib/mdd/decision-engine/propose";
 import { composeAnalyzeInput } from "@/lib/mdd/attachments";
 import { CASE_TYPES, type CaseStatus, type DecisionBrief, type DecisionReadiness, type IntakeAttachmentRecord, type MddCase } from "@/lib/mdd/types";
-import { CASE_TYPE_LABEL_JA, MDD_UI } from "@/lib/mdd/ui-labels-ja";
+import {
+  CASE_TYPE_LABEL_JA,
+  formatTagsJa,
+  MDD_UI,
+} from "@/lib/mdd/ui-labels-ja";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 
@@ -329,12 +333,11 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
             {MDD_UI.humanReviewed}
           </p>
           <p className="text-muted-foreground mt-1 text-xs">
-            案件種別 · タグ · 推奨対応 · 社長判断 · Review Candidate —
-            変更時のみ編集（個別クリック不要）。
+            {MDD_UI.humanReviewedEssentials}
           </p>
           {caseData.status === "CLOSED" && caseData.reviewCandidateFlag ? (
             <span className="mt-1 block text-xs">
-              Status is CLOSED; Review Candidate flag remains on.
+              {MDD_UI.closedReviewCandidateRemains}
             </span>
           ) : null}
         </div>
@@ -343,12 +346,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
         <Card className="overflow-visible">
           <CardHeader>
-            <CardTitle>
-              {MDD_UI.caseIntake}
-              <span className="text-muted-foreground ml-2 text-sm font-normal">
-                / {MDD_UI.caseIntakeEn}
-              </span>
-            </CardTitle>
+            <CardTitle>{MDD_UI.caseIntake}</CardTitle>
             <CardDescription>{MDD_UI.caseIntakeHelp}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
@@ -498,12 +496,7 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
               <Card className="border-primary/20">
                 <CardHeader>
                   <div className="flex flex-col gap-1">
-                    <CardTitle>
-                      {MDD_UI.executiveDecision}
-                      <span className="text-muted-foreground ml-2 text-sm font-normal">
-                        / {MDD_UI.executiveDecisionEn}
-                      </span>
-                    </CardTitle>
+                    <CardTitle>{MDD_UI.executiveDecision}</CardTitle>
                     <CardDescription>{MDD_UI.executiveHelp}</CardDescription>
                   </div>
                 </CardHeader>
@@ -549,9 +542,6 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
                     <section className="bg-muted/30 flex flex-col gap-2 rounded-lg border p-3">
                       <h3 className="text-sm font-semibold">
                         {MDD_UI.currentDecisionQuestion}
-                        <span className="text-muted-foreground ml-2 text-xs font-normal">
-                          / {MDD_UI.currentDecisionQuestionEn}
-                        </span>
                       </h3>
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">
                         {
@@ -718,26 +708,29 @@ export function MddCaseWorkspace({ caseId }: { caseId: string }) {
 
               <DetailSection title={MDD_UI.managementLearning}>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <Flag label="CA" on={brief.learning.correctiveAction} />
-                  <Flag label="PA" on={brief.learning.preventiveAction} />
+                  <Flag label={MDD_UI.learningCa} on={brief.learning.correctiveAction} />
+                  <Flag label={MDD_UI.learningPa} on={brief.learning.preventiveAction} />
                   <Flag
-                    label="Effectiveness"
+                    label={MDD_UI.learningEffectiveness}
                     on={brief.learning.effectivenessVerification}
                   />
-                  <Flag label="Horizontal" on={brief.learning.horizontalCheck} />
                   <Flag
-                    label="IA Candidate"
+                    label={MDD_UI.learningHorizontal}
+                    on={brief.learning.horizontalCheck}
+                  />
+                  <Flag
+                    label={MDD_UI.learningIa}
                     on={brief.learning.internalAuditCandidate}
                   />
                   <Flag
-                    label="MR Candidate"
+                    label={MDD_UI.learningMr}
                     on={brief.learning.managementReviewCandidate}
                   />
                   <Flag
-                    label="Knowledge Update"
+                    label={MDD_UI.learningKnowledge}
                     on={brief.learning.knowledgeUpdateCandidate}
                   />
-                  <p>Fleet-wide: {brief.learning.fleetWideRelevance}</p>
+                  <p>船隊全体: {brief.learning.fleetWideRelevance}</p>
                 </div>
                 {brief.learning.notes ? (
                   <p className="text-muted-foreground text-sm">
@@ -777,8 +770,8 @@ function HumanConfirmationPanel({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-muted-foreground text-xs">
-          人確認の必須項目：案件種別 · タグ · 推奨対応 · 社長判断 · Review
-          Candidate
+          人確認の必須項目：案件種別 · タグ · 推奨対応 · 社長判断 ·{" "}
+          {MDD_UI.reviewCandidate}
         </p>
         <ol className="flex flex-col gap-2 text-sm">
           <ConfirmRow
@@ -793,7 +786,7 @@ function HumanConfirmationPanel({
           <ConfirmRow
             n={2}
             label="タグ"
-            value={caseData.tags.join(", ") || "(なし)"}
+            value={formatTagsJa(caseData.tags)}
           />
           <ConfirmRow
             n={3}
@@ -808,8 +801,8 @@ function HumanConfirmationPanel({
           />
           <ConfirmRow
             n={5}
-            label="Review Candidate"
-            value={caseData.reviewCandidateFlag ? "YES" : "NO"}
+            label={MDD_UI.reviewCandidate}
+            value={caseData.reviewCandidateFlag ? MDD_UI.yes : MDD_UI.no}
           />
         </ol>
 
@@ -923,7 +916,7 @@ function HumanConfirmationPanel({
                   })
                 }
               />
-              Review Candidate (flag; survives Close)
+              {MDD_UI.reviewCandidateHelp}
             </label>
           </div>
         ) : null}

@@ -48,7 +48,7 @@ export function ReadinessBadge({
 
 export function ReviewCandidateBadge({ on }: { on: boolean }) {
   if (!on) return null;
-  return <Badge variant="handover">Review Candidate</Badge>;
+  return <Badge variant="handover">レビュー候補</Badge>;
 }
 
 /** Attention rank for Case List sorting — higher = needs President sooner. */
